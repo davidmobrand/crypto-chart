@@ -485,6 +485,11 @@ function initChart() {
                     title: {
                         display: true,
                         text: 'Time'
+                    },
+                    ticks: {
+                        maxRotation: 0,
+                        autoSkip: true,
+                        maxTicksLimit: 8
                     }
                 },
                 y: {
@@ -531,6 +536,8 @@ function initChart() {
             },
             plugins: {
                 tooltip: {
+                    mode: 'index',
+                    intersect: false,
                     callbacks: {
                         label: function(context) {
                             let label = context.dataset.label || '';
@@ -553,6 +560,9 @@ function initChart() {
                         }
                     }
                 }
+            },
+            animation: {
+                duration: 0
             }
         }
     });
@@ -1155,7 +1165,8 @@ style.textContent = `
     .recommendations-table {
         width: 100%;
         border-collapse: collapse;
-        margin: 20px 0;
+        margin-top: 20px;
+        font-size: 14px;
     }
     
     .recommendations-table th,
@@ -1166,20 +1177,20 @@ style.textContent = `
     }
     
     .recommendations-table th {
-        background-color: #f5f5f5;
-        font-weight: bold;
+        background-color: #f8f9fa;
+        font-weight: 500;
     }
     
     .recommendations-table tr:hover {
-        background-color: #f8f9fa;
+        background-color: #f5f5f5;
     }
     
     .recommendations-table .favorite-star {
-        color: #ffd700;
         cursor: pointer;
+        color: #ffd700;
         opacity: 0.3;
-        font-size: 20px;
         transition: opacity 0.2s;
+        font-size: 20px;
     }
     
     .recommendations-table .favorite-star:hover {
@@ -1189,7 +1200,78 @@ style.textContent = `
     .recommendations-table .favorite-star.active {
         opacity: 1;
     }
-    
+
+    /* Add mobile styles for recommendations table */
+    @media (max-width: 768px) {
+        .recommendations-table {
+            font-size: 12px;
+        }
+
+        .recommendations-table th,
+        .recommendations-table td {
+            padding: 8px 4px;
+        }
+
+        .recommendations-table .favorite-star {
+            font-size: 24px;
+            padding: 8px;
+        }
+
+        /* Make the table scrollable horizontally on mobile */
+        .recommendations-modal {
+            max-width: 100%;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        /* Optimize small text for mobile */
+        .recommendations-table small {
+            display: block;
+            margin-top: 4px;
+            font-size: 10px;
+        }
+
+        /* Adjust column widths for mobile */
+        .recommendations-table th:first-child,
+        .recommendations-table td:first-child {
+            width: 40px;
+            min-width: 40px;
+        }
+
+        .recommendations-table th:nth-child(2),
+        .recommendations-table td:nth-child(2) {
+            min-width: 80px;
+        }
+
+        .recommendations-table th:nth-child(3),
+        .recommendations-table td:nth-child(3) {
+            min-width: 100px;
+        }
+    }
+
+    /* Touch-specific styles for recommendations table */
+    @media (hover: none) {
+        .recommendations-table .favorite-star {
+            opacity: 0.5;
+        }
+
+        .recommendations-table .favorite-star:hover {
+            opacity: 0.5;
+        }
+
+        .recommendations-table .favorite-star.active {
+            opacity: 1;
+        }
+
+        .recommendations-table tr:hover {
+            background-color: transparent;
+        }
+
+        .recommendations-table tr:active {
+            background-color: #f5f5f5;
+        }
+    }
+
     .error {
         color: #d32f2f;
         text-align: center;
@@ -1267,3 +1349,82 @@ function deleteHistoricalRecommendation(timestamp) {
         closeRecommendations();
     }
 }
+
+// Add touch event handling for mobile
+const canvas = document.getElementById('priceChart');
+let touchStartX = null;
+let touchStartY = null;
+let pinchStartDistance = null;
+let pinchStartRange = null;
+
+canvas.addEventListener('touchstart', function(e) {
+    if (e.touches.length === 1) {
+        const touch = e.touches[0];
+        touchStartX = touch.clientX;
+        touchStartY = touch.clientY;
+    } else if (e.touches.length === 2) {
+        // Handle pinch to zoom
+        const touch1 = e.touches[0];
+        const touch2 = e.touches[1];
+        pinchStartDistance = Math.hypot(
+            touch2.clientX - touch1.clientX,
+            touch2.clientY - touch1.clientY
+        );
+        pinchStartRange = priceChart.scales.x.max - priceChart.scales.x.min;
+    }
+}, { passive: true });
+
+canvas.addEventListener('touchmove', function(e) {
+    if (e.touches.length === 1 && touchStartX !== null && touchStartY !== null) {
+        const touch = e.touches[0];
+        const deltaX = touchStartX - touch.clientX;
+        const deltaY = touchStartY - touch.clientY;
+        
+        // Implement horizontal scrolling for the chart
+        if (Math.abs(deltaX) > Math.abs(deltaY)) {
+            e.preventDefault();
+            const chart = priceChart;
+            const range = chart.scales.x.max - chart.scales.x.min;
+            const shift = (range * deltaX) / canvas.width;
+            
+            chart.options.scales.x.min = new Date(chart.scales.x.min.getTime() + shift);
+            chart.options.scales.x.max = new Date(chart.scales.x.max.getTime() + shift);
+            chart.update('none');
+        }
+        
+        touchStartX = touch.clientX;
+        touchStartY = touch.clientY;
+    } else if (e.touches.length === 2 && pinchStartDistance !== null) {
+        // Handle pinch to zoom
+        const touch1 = e.touches[0];
+        const touch2 = e.touches[1];
+        const pinchDistance = Math.hypot(
+            touch2.clientX - touch1.clientX,
+            touch2.clientY - touch1.clientY
+        );
+        
+        const scale = pinchStartDistance / pinchDistance;
+        const chart = priceChart;
+        const centerTime = (chart.scales.x.max.getTime() + chart.scales.x.min.getTime()) / 2;
+        const newRange = pinchStartRange * scale;
+        
+        chart.options.scales.x.min = new Date(centerTime - newRange / 2);
+        chart.options.scales.x.max = new Date(centerTime + newRange / 2);
+        chart.update('none');
+    }
+}, { passive: false });
+
+canvas.addEventListener('touchend', function(e) {
+    if (e.touches.length === 0) {
+        touchStartX = null;
+        touchStartY = null;
+        pinchStartDistance = null;
+        pinchStartRange = null;
+    } else if (e.touches.length === 1) {
+        const touch = e.touches[0];
+        touchStartX = touch.clientX;
+        touchStartY = touch.clientY;
+        pinchStartDistance = null;
+        pinchStartRange = null;
+    }
+}, { passive: true });
