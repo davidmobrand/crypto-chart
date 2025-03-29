@@ -494,9 +494,12 @@
                 gap: 20px;
                 align-items: center;
             }
-            .price-info-left, .price-info-right {
+            .price-info-left {
                 width: 100%;
+                flex-direction: column;
                 justify-content: center;
+                align-items: center;
+                gap: 8px;
             }
             .price-info-symbol {
                 align-items: center;
@@ -505,12 +508,14 @@
                 text-align: center;
             }
             .price-info-right {
+                width: 100%;
                 text-align: center;
             }
             .favorite-button {
                 width: 44px;  /* Larger touch target */
                 height: 44px;
                 font-size: 24px;
+                margin-bottom: 4px;
             }
             .symbol-search {
                 font-size: 16px;
