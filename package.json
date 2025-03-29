@@ -1,0 +1,34 @@
+{
+  "name": "trader",
+  "version": "1.0.0",
+  "description": "Cryptocurrency price chart application with technical indicators and trading recommendations",
+  "main": "script.js",
+  "scripts": {
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage"
+  },
+  "keywords": [
+    "cryptocurrency",
+    "trading",
+    "chart",
+    "technical-analysis"
+  ],
+  "author": "David Mobrand",
+  "license": "MIT",
+  "jest": {
+    "testEnvironment": "jsdom",
+    "setupFilesAfterEnv": ["<rootDir>/tests/setup.js"],
+    "collectCoverageFrom": [
+      "script.js"
+    ],
+    "coverageThreshold": {
+      "global": {
+        "branches": 70,
+        "functions": 70,
+        "lines": 70,
+        "statements": 70
+      }
+    }
+  }
+}
