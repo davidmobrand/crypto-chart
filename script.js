@@ -9,6 +9,10 @@ let symbolData = {};
 let favorites = new Set(JSON.parse(localStorage.getItem('favorites') || '[]'));
 let currentFilter = 'all';
 let currentExchange = 'binance';
+let touchStartX = null;
+let touchStartY = null;
+let pinchStartDistance = null;
+let pinchStartRange = null;
 
 // Exchange-specific API endpoints
 const EXCHANGES = {
@@ -64,6 +68,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initChart();
     initSymbolList();
     updateChart();
+    initCanvasEvents();
     
     // Setup filter buttons
     document.querySelectorAll('.filter-button').forEach(button => {
@@ -1324,81 +1329,80 @@ function deleteHistoricalRecommendation(timestamp) {
     }
 }
 
-// Add touch event handling for mobile
-const canvas = document.getElementById('priceChart');
-let touchStartX = null;
-let touchStartY = null;
-let pinchStartDistance = null;
-let pinchStartRange = null;
+// Move canvas touch event setup into a function
+function initCanvasEvents() {
+    const canvas = document.getElementById('priceChart');
+    if (!canvas) return;
 
-canvas.addEventListener('touchstart', function(e) {
-    if (e.touches.length === 1) {
-        const touch = e.touches[0];
-        touchStartX = touch.clientX;
-        touchStartY = touch.clientY;
-    } else if (e.touches.length === 2) {
-        // Handle pinch to zoom
-        const touch1 = e.touches[0];
-        const touch2 = e.touches[1];
-        pinchStartDistance = Math.hypot(
-            touch2.clientX - touch1.clientX,
-            touch2.clientY - touch1.clientY
-        );
-        pinchStartRange = priceChart.scales.x.max - priceChart.scales.x.min;
-    }
-}, { passive: true });
+    canvas.addEventListener('touchstart', function(e) {
+        if (e.touches.length === 1) {
+            const touch = e.touches[0];
+            touchStartX = touch.clientX;
+            touchStartY = touch.clientY;
+        } else if (e.touches.length === 2) {
+            // Handle pinch to zoom
+            const touch1 = e.touches[0];
+            const touch2 = e.touches[1];
+            pinchStartDistance = Math.hypot(
+                touch2.clientX - touch1.clientX,
+                touch2.clientY - touch1.clientY
+            );
+            pinchStartRange = priceChart.scales.x.max - priceChart.scales.x.min;
+        }
+    }, { passive: true });
 
-canvas.addEventListener('touchmove', function(e) {
-    if (e.touches.length === 1 && touchStartX !== null && touchStartY !== null) {
-        const touch = e.touches[0];
-        const deltaX = touchStartX - touch.clientX;
-        const deltaY = touchStartY - touch.clientY;
-        
-        // Implement horizontal scrolling for the chart
-        if (Math.abs(deltaX) > Math.abs(deltaY)) {
-            e.preventDefault();
-            const chart = priceChart;
-            const range = chart.scales.x.max - chart.scales.x.min;
-            const shift = (range * deltaX) / canvas.width;
+    canvas.addEventListener('touchmove', function(e) {
+        if (e.touches.length === 1 && touchStartX !== null && touchStartY !== null) {
+            const touch = e.touches[0];
+            const deltaX = touchStartX - touch.clientX;
+            const deltaY = touchStartY - touch.clientY;
             
-            chart.options.scales.x.min = new Date(chart.scales.x.min.getTime() + shift);
-            chart.options.scales.x.max = new Date(chart.scales.x.max.getTime() + shift);
+            // Implement horizontal scrolling for the chart
+            if (Math.abs(deltaX) > Math.abs(deltaY)) {
+                e.preventDefault();
+                const chart = priceChart;
+                const range = chart.scales.x.max - chart.scales.x.min;
+                const shift = (range * deltaX) / canvas.width;
+                
+                chart.options.scales.x.min = new Date(chart.scales.x.min.getTime() + shift);
+                chart.options.scales.x.max = new Date(chart.scales.x.max.getTime() + shift);
+                chart.update('none');
+            }
+            
+            touchStartX = touch.clientX;
+            touchStartY = touch.clientY;
+        } else if (e.touches.length === 2 && pinchStartDistance !== null) {
+            // Handle pinch to zoom
+            const touch1 = e.touches[0];
+            const touch2 = e.touches[1];
+            const pinchDistance = Math.hypot(
+                touch2.clientX - touch1.clientX,
+                touch2.clientY - touch1.clientY
+            );
+            
+            const scale = pinchStartDistance / pinchDistance;
+            const chart = priceChart;
+            const centerTime = (chart.scales.x.max.getTime() + chart.scales.x.min.getTime()) / 2;
+            const newRange = pinchStartRange * scale;
+            
+            chart.options.scales.x.min = new Date(centerTime - newRange / 2);
+            chart.options.scales.x.max = new Date(centerTime + newRange / 2);
             chart.update('none');
         }
-        
-        touchStartX = touch.clientX;
-        touchStartY = touch.clientY;
-    } else if (e.touches.length === 2 && pinchStartDistance !== null) {
-        // Handle pinch to zoom
-        const touch1 = e.touches[0];
-        const touch2 = e.touches[1];
-        const pinchDistance = Math.hypot(
-            touch2.clientX - touch1.clientX,
-            touch2.clientY - touch1.clientY
-        );
-        
-        const scale = pinchStartDistance / pinchDistance;
-        const chart = priceChart;
-        const centerTime = (chart.scales.x.max.getTime() + chart.scales.x.min.getTime()) / 2;
-        const newRange = pinchStartRange * scale;
-        
-        chart.options.scales.x.min = new Date(centerTime - newRange / 2);
-        chart.options.scales.x.max = new Date(centerTime + newRange / 2);
-        chart.update('none');
-    }
-}, { passive: false });
+    }, { passive: false });
 
-canvas.addEventListener('touchend', function(e) {
-    if (e.touches.length === 0) {
-        touchStartX = null;
-        touchStartY = null;
-        pinchStartDistance = null;
-        pinchStartRange = null;
-    } else if (e.touches.length === 1) {
-        const touch = e.touches[0];
-        touchStartX = touch.clientX;
-        touchStartY = touch.clientY;
-        pinchStartDistance = null;
-        pinchStartRange = null;
-    }
-}, { passive: true });
+    canvas.addEventListener('touchend', function(e) {
+        if (e.touches.length === 0) {
+            touchStartX = null;
+            touchStartY = null;
+            pinchStartDistance = null;
+            pinchStartRange = null;
+        } else if (e.touches.length === 1) {
+            const touch = e.touches[0];
+            touchStartX = touch.clientX;
+            touchStartY = touch.clientY;
+            pinchStartDistance = null;
+            pinchStartRange = null;
+        }
+    }, { passive: true });
+}
