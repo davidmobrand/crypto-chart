@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<coverage generated="1743243201722" clover="3.2.0">
+  <project timestamp="1743243201722" name="All files">
+    <metrics statements="40" coveredstatements="40" conditionals="13" coveredconditionals="10" methods="9" coveredmethods="9" elements="62" coveredelements="59" complexity="0" loc="40" ncloc="40" packages="1" files="1" classes="1"/>
+    <file name="calculations.js" path="/Users/david.mobrand/Documents/development/trader/calculations.js">
+      <metrics statements="40" coveredstatements="40" conditionals="13" coveredconditionals="10" methods="9" coveredmethods="9"/>
+      <line num="3" count="1" type="stmt"/>
+      <line num="4" count="1" type="stmt"/>
+      <line num="5" count="3" type="stmt"/>
+      <line num="6" count="9" type="stmt"/>
+      <line num="8" count="1" type="stmt"/>
+      <line num="12" count="3" type="stmt"/>
+      <line num="13" count="3" type="stmt"/>
+      <line num="14" count="3" type="stmt"/>
+      <line num="16" count="3" type="stmt"/>
+      <line num="17" count="3" type="stmt"/>
+      <line num="18" count="27" type="stmt"/>
+      <line num="19" count="27" type="stmt"/>
+      <line num="20" count="27" type="stmt"/>
+      <line num="22" count="3" type="stmt"/>
+      <line num="26" count="1" type="stmt"/>
+      <line num="27" count="1" type="stmt"/>
+      <line num="28" count="1" type="stmt"/>
+      <line num="30" count="1" type="stmt"/>
+      <line num="31" count="10" type="cond" truecount="3" falsecount="1"/>
+      <line num="32" count="10" type="stmt"/>
+      <line num="36" count="10" type="stmt"/>
+      <line num="37" count="1" type="stmt"/>
+      <line num="38" count="10" type="cond" truecount="3" falsecount="1"/>
+      <line num="41" count="1" type="stmt"/>
+      <line num="49" count="3" type="stmt"/>
+      <line num="50" count="3" type="stmt"/>
+      <line num="51" count="3" type="stmt"/>
+      <line num="54" count="3" type="stmt"/>
+      <line num="55" count="18" type="stmt"/>
+      <line num="56" count="18" type="cond" truecount="2" falsecount="0"/>
+      <line num="57" count="11" type="stmt"/>
+      <line num="59" count="7" type="stmt"/>
+      <line num="64" count="3" type="stmt"/>
+      <line num="65" count="40" type="stmt"/>
+      <line num="66" count="40" type="stmt"/>
+      <line num="68" count="10" type="cond" truecount="2" falsecount="0"/>
+      <line num="69" count="5" type="stmt"/>
+      <line num="71" count="5" type="stmt"/>
+      <line num="72" count="5" type="stmt"/>
+      <line num="76" count="3" type="stmt"/>
+    </file>
+  </project>
+</coverage>
