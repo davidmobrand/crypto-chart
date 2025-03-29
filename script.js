@@ -396,6 +396,7 @@ function initChart() {
                         text: 'RSI'
                     },
                     position: 'right',
+                    display: showRSI,
                     grid: {
                         drawOnChartArea: false,
                         color: context => {
@@ -800,59 +801,61 @@ async function analyzeCoinsForRecommendations() {
     const interval = '1m';  // Use 1-minute candles for recent momentum
     
     try {
+        // Get top 100 coins by volume
         const volumeSortedSymbols = symbols
+            .filter(s => s.volume > 0)  // Ensure we have volume data
             .sort((a, b) => b.volume - a.volume)
             .slice(0, 100);
         
+        if (volumeSortedSymbols.length === 0) {
+            throw new Error('No valid symbols found for analysis');
+        }
+        
+        console.log('Analyzing', volumeSortedSymbols.length, 'symbols');
+        
         for (const symbol of volumeSortedSymbols) {
-            const response = await fetch(`${EXCHANGES[currentExchange].baseUrl}/klines?symbol=${symbol.symbol}&interval=${interval}&limit=30`);
-            const data = await response.json();
-            
-            if (!data || data.length < 30) continue;
-            
-            const prices = data.map(d => parseFloat(d[4]));
-            const volumes = data.map(d => parseFloat(d[5]));
-            
-            const recentPriceChange = (prices[prices.length - 1] - prices[0]) / prices[0] * 100;
-            const averageVolume = volumes.reduce((a, b) => a + b) / volumes.length;
-            const recentVolume = volumes[volumes.length - 1];
-            const volumeIncrease = recentVolume / averageVolume;
-            
-            // Calculate average price movement per minute
-            const priceChanges = prices.slice(1).map((price, i) => Math.abs(price - prices[i]) / prices[i] * 100);
-            const averageVolatility = priceChanges.reduce((a, b) => a + b) / priceChanges.length;
-            
-            // Calculate momentum (rate of change)
-            const momentum = recentPriceChange / 30; // % change per minute
-            
-            // Estimate time to reach targets based on recent performance
-            const baseTimeEstimate = averageVolatility > 0 ? 1 / averageVolatility : 1;
-            const momentumFactor = momentum > 0 ? 1 / (1 + momentum) : 1;
-            const volumeFactor = volumeIncrease > 1 ? 1 / volumeIncrease : 1;
-            
-            // Calculate estimated minutes for each target
-            const getTimeEstimate = (targetPercent) => {
-                const baseTime = (targetPercent / averageVolatility) * baseTimeEstimate;
-                const adjustedTime = baseTime * momentumFactor * volumeFactor;
-                return Math.round(Math.max(5, Math.min(60, adjustedTime))); // Cap between 5 and 60 minutes
-            };
-            
-            const score = recentPriceChange * 0.4 +
-                         (volumeIncrease - 1) * 0.4 +
-                         averageVolatility * 0.2;
-            
-            if (score > 0.5 && recentPriceChange > 0 && volumeIncrease > 1.2) {
-                recommendations.push({
-                    symbol: symbol.symbol.replace('USDT', '/USDT'),
-                    currentPrice: prices[prices.length - 1],
-                    targetPrice: prices[prices.length - 1] * 1.01,
-                    score: score,
-                    timeEstimates: {
-                        halfPercent: getTimeEstimate(0.5),
-                        onePercent: getTimeEstimate(1.0),
-                        twoPercent: getTimeEstimate(2.0)
-                    }
-                });
+            try {
+                const response = await safeFetch(
+                    `${EXCHANGES[currentExchange].baseUrl}/klines?symbol=${symbol.symbol}&interval=${interval}&limit=30`
+                );
+                
+                if (!response || response.length < 30) continue;
+                
+                const prices = response.map(d => parseFloat(d[4]));
+                const volumes = response.map(d => parseFloat(d[5]));
+                
+                const recentPriceChange = (prices[prices.length - 1] - prices[0]) / prices[0] * 100;
+                const averageVolume = volumes.reduce((a, b) => a + b) / volumes.length;
+                const recentVolume = volumes[volumes.length - 1];
+                const volumeIncrease = recentVolume / averageVolume;
+                
+                // Calculate average price movement per minute
+                const priceChanges = prices.slice(1).map((price, i) => Math.abs(price - prices[i]) / prices[i] * 100);
+                const averageVolatility = priceChanges.reduce((a, b) => a + b) / priceChanges.length;
+                
+                // Calculate momentum (rate of change)
+                const momentum = recentPriceChange / 30; // % change per minute
+                
+                const score = recentPriceChange * 0.4 +
+                             (volumeIncrease - 1) * 0.4 +
+                             averageVolatility * 0.2;
+                
+                if (score > 0.5 && recentPriceChange > 0 && volumeIncrease > 1.2) {
+                    recommendations.push({
+                        symbol: symbol.symbol.replace('USDT', '/USDT'),
+                        currentPrice: prices[prices.length - 1],
+                        targetPrice: prices[prices.length - 1] * 1.01,
+                        score: score,
+                        timeEstimates: {
+                            halfPercent: Math.max(5, Math.min(60, Math.round(15 / averageVolatility))),
+                            onePercent: Math.max(5, Math.min(60, Math.round(30 / averageVolatility))),
+                            twoPercent: Math.max(5, Math.min(60, Math.round(60 / averageVolatility)))
+                        }
+                    });
+                }
+            } catch (error) {
+                console.error('Error analyzing symbol:', symbol.symbol, error);
+                continue;
             }
         }
         
@@ -862,7 +865,7 @@ async function analyzeCoinsForRecommendations() {
             
     } catch (error) {
         console.error('Error analyzing coins:', error);
-        return [];
+        throw error;
     }
 }
 
@@ -1004,16 +1007,21 @@ function updateRecommendationsModal(recommendations, timestamp = null) {
 
 // Update the openRecommendations function
 async function openRecommendations() {
-    document.getElementById('recommendationsModal').classList.add('active');
+    const modal = document.getElementById('recommendationsModal');
     const progressContainer = document.getElementById('recommendationsProgress');
     const contentContainer = document.getElementById('recommendationsContent');
     
-    // Show progress bar, hide content
+    modal.classList.add('active');
     progressContainer.style.display = 'block';
     contentContainer.style.display = 'none';
+    contentContainer.innerHTML = '';
     
     try {
         const recommendations = await analyzeCoinsForRecommendations();
+        
+        if (!recommendations || recommendations.length === 0) {
+            throw new Error('No recommendations available at this time');
+        }
         
         // Store the recommendations
         storeRecommendations(recommendations);
@@ -1022,13 +1030,18 @@ async function openRecommendations() {
         progressContainer.style.display = 'none';
         contentContainer.style.display = 'block';
         
-        // Use the updateRecommendationsModal function to update content
+        // Update content
         updateRecommendationsModal(recommendations);
         
     } catch (error) {
         progressContainer.style.display = 'none';
         contentContainer.style.display = 'block';
-        contentContainer.innerHTML = `<p class="error">Error loading recommendations. Please try again.</p>`;
+        contentContainer.innerHTML = `
+            <div class="error">
+                <p>${error.message}</p>
+                <p>Please try again in a few minutes.</p>
+            </div>
+        `;
         console.error('Error:', error);
     }
 }
@@ -1340,10 +1353,14 @@ function toggleAutoRefresh() {
         clearInterval(autoRefreshInterval);
         autoRefreshInterval = null;
         button.classList.remove('active');
+        console.log('Auto refresh disabled');
     } else {
         updateChart();
-        autoRefreshInterval = setInterval(updateChart, 60000); // Update every minute
+        const interval = document.getElementById('interval').value;
+        const refreshRate = interval.includes('m') ? 30000 : 60000; // 30s for minute intervals, 60s for others
+        autoRefreshInterval = setInterval(updateChart, refreshRate);
         button.classList.add('active');
+        console.log('Auto refresh enabled with interval:', refreshRate, 'ms');
     }
 }
 
