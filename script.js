@@ -1,19 +1,3 @@
-let priceChart;
-let autoRefreshInterval;
-let showSMA = false;
-let showRSI = false;
-let showMACD = false;
-let selectedSymbol = 'BTCUSDT';
-let symbols = [];
-let symbolData = {};
-let favorites = new Set(JSON.parse(localStorage.getItem('favorites') || '[]'));
-let currentFilter = 'all';
-let currentExchange = 'binance';
-let touchStartX = null;
-let touchStartY = null;
-let pinchStartDistance = null;
-let pinchStartRange = null;
-
 // Toggle functions
 function toggleAutoRefresh() {
     const button = document.getElementById('autoRefresh');
@@ -55,6 +39,22 @@ function toggleMACD() {
     priceChart.options.scales.macd.display = showMACD;
     updateChart();
 }
+
+let priceChart;
+let autoRefreshInterval;
+let showSMA = false;
+let showRSI = false;
+let showMACD = false;
+let selectedSymbol = 'BTCUSDT';
+let symbols = [];
+let symbolData = {};
+let favorites = new Set(JSON.parse(localStorage.getItem('favorites') || '[]'));
+let currentFilter = 'all';
+let currentExchange = 'binance';
+let touchStartX = null;
+let touchStartY = null;
+let pinchStartDistance = null;
+let pinchStartRange = null;
 
 import { calculateSMA, calculateEMA, calculateMACD, calculateRSI } from './calculations.js';
 
