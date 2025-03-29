@@ -16,6 +16,9 @@ global.window = {
     addEventListener: jest.fn()
 };
 
+// Set global canvas variable
+global.canvas = mockCanvas;
+
 // Mock document object
 global.document = {
     getElementById: jest.fn((id) => {
