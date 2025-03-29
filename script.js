@@ -1,3 +1,22 @@
+import { calculateSMA, calculateEMA, calculateMACD, calculateRSI } from './calculations.js';
+
+// Global variables
+let priceChart;
+let autoRefreshInterval;
+let showSMA = false;
+let showRSI = false;
+let showMACD = false;
+let selectedSymbol = 'BTCUSDT';
+let symbols = [];
+let symbolData = {};
+let favorites = new Set(JSON.parse(localStorage.getItem('favorites') || '[]'));
+let currentFilter = 'all';
+let currentExchange = 'binance';
+let touchStartX = null;
+let touchStartY = null;
+let pinchStartDistance = null;
+let pinchStartRange = null;
+
 // Toggle functions
 export function toggleAutoRefresh() {
     const button = document.getElementById('autoRefresh');
@@ -46,23 +65,13 @@ window.toggleSMA = toggleSMA;
 window.toggleRSI = toggleRSI;
 window.toggleMACD = toggleMACD;
 
-let priceChart;
-let autoRefreshInterval;
-let showSMA = false;
-let showRSI = false;
-let showMACD = false;
-let selectedSymbol = 'BTCUSDT';
-let symbols = [];
-let symbolData = {};
-let favorites = new Set(JSON.parse(localStorage.getItem('favorites') || '[]'));
-let currentFilter = 'all';
-let currentExchange = 'binance';
-let touchStartX = null;
-let touchStartY = null;
-let pinchStartDistance = null;
-let pinchStartRange = null;
-
-import { calculateSMA, calculateEMA, calculateMACD, calculateRSI } from './calculations.js';
+// Also make other functions needed by HTML available globally
+window.toggleFavorite = toggleFavorite;
+window.showHistoricalRecommendations = showHistoricalRecommendations;
+window.deleteHistoricalRecommendation = deleteHistoricalRecommendation;
+window.openRecommendations = openRecommendations;
+window.closeRecommendations = closeRecommendations;
+window.handleExchangeChange = handleExchangeChange;
 
 // CORS proxy for API calls
 const CORS_PROXY = 'https://cors-anywhere.herokuapp.com/';
