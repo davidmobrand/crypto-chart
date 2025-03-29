@@ -1221,32 +1221,37 @@ function initCanvasEvents() {
     const canvas = document.getElementById('priceChart');
     if (!canvas) return;
 
+    let lastTouchTime = 0;
+
     canvas.addEventListener('touchstart', function(e) {
-        if (e.touches.length === 1) {
-            const touch = e.touches[0];
+        lastTouchTime = Date.now();
+        if (e.targetTouches.length === 1) {
+            const touch = e.targetTouches[0];
             touchStartX = touch.clientX;
             touchStartY = touch.clientY;
-        } else if (e.touches.length === 2) {
-            // Handle pinch to zoom
-            const touch1 = e.touches[0];
-            const touch2 = e.touches[1];
+        } else if (e.targetTouches.length === 2) {
+            const touch1 = e.targetTouches[0];
+            const touch2 = e.targetTouches[1];
             pinchStartDistance = Math.hypot(
                 touch2.clientX - touch1.clientX,
                 touch2.clientY - touch1.clientY
             );
             pinchStartRange = priceChart.scales.x.max - priceChart.scales.x.min;
         }
-    }, { passive: true });
+    }, { passive: false });
 
     canvas.addEventListener('touchmove', function(e) {
-        if (e.touches.length === 1 && touchStartX !== null && touchStartY !== null) {
-            const touch = e.touches[0];
+        // Prevent default only if it's been less than 300ms since touch start
+        if (Date.now() - lastTouchTime < 300) {
+            e.preventDefault();
+        }
+
+        if (e.targetTouches.length === 1 && touchStartX !== null && touchStartY !== null) {
+            const touch = e.targetTouches[0];
             const deltaX = touchStartX - touch.clientX;
             const deltaY = touchStartY - touch.clientY;
             
-            // Implement horizontal scrolling for the chart
             if (Math.abs(deltaX) > Math.abs(deltaY)) {
-                e.preventDefault();
                 const chart = priceChart;
                 const range = chart.scales.x.max - chart.scales.x.min;
                 const shift = (range * deltaX) / canvas.width;
@@ -1258,10 +1263,9 @@ function initCanvasEvents() {
             
             touchStartX = touch.clientX;
             touchStartY = touch.clientY;
-        } else if (e.touches.length === 2 && pinchStartDistance !== null) {
-            // Handle pinch to zoom
-            const touch1 = e.touches[0];
-            const touch2 = e.touches[1];
+        } else if (e.targetTouches.length === 2 && pinchStartDistance !== null) {
+            const touch1 = e.targetTouches[0];
+            const touch2 = e.targetTouches[1];
             const pinchDistance = Math.hypot(
                 touch2.clientX - touch1.clientX,
                 touch2.clientY - touch1.clientY
@@ -1279,13 +1283,13 @@ function initCanvasEvents() {
     }, { passive: false });
 
     canvas.addEventListener('touchend', function(e) {
-        if (e.touches.length === 0) {
+        if (e.targetTouches.length === 0) {
             touchStartX = null;
             touchStartY = null;
             pinchStartDistance = null;
             pinchStartRange = null;
-        } else if (e.touches.length === 1) {
-            const touch = e.touches[0];
+        } else if (e.targetTouches.length === 1) {
+            const touch = e.targetTouches[0];
             touchStartX = touch.clientX;
             touchStartY = touch.clientY;
             pinchStartDistance = null;

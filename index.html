@@ -595,6 +595,70 @@
                 opacity: 1;
             }
         }
+
+        /* Add Safari iOS specific styles */
+        @supports (-webkit-touch-callout: none) {
+            .chart-container {
+                -webkit-overflow-scrolling: touch;
+                -webkit-user-select: none;
+                user-select: none;
+            }
+            
+            .symbol-list {
+                -webkit-overflow-scrolling: touch;
+            }
+            
+            .modal-content {
+                -webkit-overflow-scrolling: touch;
+            }
+            
+            select, 
+            button,
+            .toggle-button,
+            .symbol-search,
+            .refresh-button {
+                -webkit-tap-highlight-color: transparent;
+            }
+            
+            .favorite-button,
+            .favorite-star {
+                padding: 12px;  /* Larger touch target for iOS */
+            }
+        }
+
+        /* Improve touch targets for mobile */
+        @media (max-width: 768px) {
+            select,
+            button,
+            .toggle-button,
+            .symbol-search,
+            .refresh-button {
+                min-height: 44px;  /* iOS minimum touch target size */
+            }
+            
+            .symbol-item {
+                padding: 12px;  /* Larger touch area */
+            }
+            
+            .favorite-star,
+            .favorite-button {
+                font-size: 24px;  /* Larger touch target */
+                padding: 12px;
+            }
+            
+            /* Prevent text selection during touch interactions */
+            * {
+                -webkit-touch-callout: none;
+                -webkit-user-select: none;
+                user-select: none;
+            }
+            
+            /* Allow text selection in input fields */
+            input, textarea {
+                -webkit-user-select: text;
+                user-select: text;
+            }
+        }
     </style>
 </head>
 <body>
