@@ -1,6 +1,12 @@
 # Cryptocurrency Price Chart
 
+[![GitHub Pages](https://img.shields.io/badge/Live_Site-GitHub_Pages-blue)](https://davidmobrand.github.io/crypto-chart/)
+
 A real-time cryptocurrency price chart application that allows you to monitor cryptocurrency prices, analyze technical indicators, and track your favorite pairs.
+
+## Live Demo
+
+Visit the live application at: [https://davidmobrand.github.io/crypto-chart/](https://davidmobrand.github.io/crypto-chart/)
 
 ## Features
 
