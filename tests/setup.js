@@ -14,12 +14,25 @@ global.localStorage = {
 // Mock fetch
 global.fetch = jest.fn();
 
-// Mock DOM elements and methods
+// Mock canvas and other DOM elements
+const mockCanvas = {
+    getContext: jest.fn(),
+    addEventListener: jest.fn(),
+    width: 800,
+    height: 600
+};
+
+global.canvas = mockCanvas;
 global.document = {
-    getElementById: jest.fn(() => ({
-        getContext: jest.fn(),
-        addEventListener: jest.fn()
-    })),
+    getElementById: jest.fn((id) => {
+        if (id === 'priceChart') {
+            return mockCanvas;
+        }
+        return {
+            getContext: jest.fn(),
+            addEventListener: jest.fn()
+        };
+    }),
     addEventListener: jest.fn(),
     createElement: jest.fn(() => ({
         getContext: jest.fn(),
