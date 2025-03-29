@@ -14,12 +14,15 @@ let touchStartY = null;
 let pinchStartDistance = null;
 let pinchStartRange = null;
 
-import { calculateSMA, calculateEMA, calculateMACD, calculateRSI } from './calculations.js';
+import { calculateSMA, calculateEMA, calculateMACD, calculateRSI } from '/crypto-chart/calculations.js';
+
+// CORS proxy for API calls
+const CORS_PROXY = 'https://cors-anywhere.herokuapp.com/';
 
 // Exchange-specific API endpoints
 const EXCHANGES = {
     binance: {
-        baseUrl: 'https://api.binance.com/api/v3',
+        baseUrl: CORS_PROXY + 'https://api.binance.com/api/v3',
         klines: '/klines',
         ticker24h: '/ticker/24hr',
         exchangeInfo: '/exchangeInfo',
