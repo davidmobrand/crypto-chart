@@ -1,4 +1,5 @@
 import { describe, test, expect, jest } from '@jest/globals';
+import { calculateSMA, calculateRSI, calculateMACD } from '../script.js';
 
 describe('Technical Indicators Calculations', () => {
     // Test SMA calculation
