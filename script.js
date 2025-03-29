@@ -70,20 +70,42 @@ const EXCHANGES = {
 // Initialize the chart when the page loads
 document.addEventListener('DOMContentLoaded', () => {
     console.log('Page loaded, initializing chart...');
-    initChart();
-    initSymbolList();
-    updateChart();
-    initCanvasEvents();
-    
-    // Setup filter buttons
-    document.querySelectorAll('.filter-button').forEach(button => {
-        button.addEventListener('click', () => {
-            document.querySelectorAll('.filter-button').forEach(b => b.classList.remove('active'));
-            button.classList.add('active');
-            currentFilter = button.dataset.filter;
-            filterSymbols();
+    try {
+        // Check if running on iOS Safari
+        const isIOSSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && 
+                           !window.MSStream && 
+                           /WebKit/.test(navigator.userAgent);
+        console.log('Environment:', isIOSSafari ? 'iOS Safari' : 'Other browser');
+        
+        // Initialize components
+        initChart();
+        initSymbolList();
+        updateChart();
+        initCanvasEvents();
+        
+        // Setup filter buttons
+        document.querySelectorAll('.filter-button').forEach(button => {
+            button.addEventListener('click', () => {
+                document.querySelectorAll('.filter-button').forEach(b => b.classList.remove('active'));
+                button.classList.add('active');
+                currentFilter = button.dataset.filter;
+                filterSymbols();
+            });
         });
-    });
+
+        // Add error event listener for Chart.js
+        if (priceChart) {
+            priceChart.options.onError = function(chart, error) {
+                console.error('Chart.js error:', error);
+                showError('Chart error: ' + error.message);
+            };
+        }
+
+        console.log('Initialization complete');
+    } catch (error) {
+        console.error('Initialization error:', error);
+        showError('Failed to initialize application: ' + error.message);
+    }
 });
 
 // Refresh symbol list
@@ -482,7 +504,21 @@ function setLoading(isLoading) {
     }
 }
 
-// Fetch data from Binance API and update the chart
+// Enhanced error handling for fetch operations
+async function safeFetch(url, options = {}) {
+    try {
+        const response = await fetch(url, options);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return await response.json();
+    } catch (error) {
+        console.error(`Fetch error for ${url}:`, error);
+        throw new Error(`Failed to fetch data: ${error.message}`);
+    }
+}
+
+// Update the updateChart function to use safeFetch
 async function updateChart() {
     const interval = document.getElementById('interval').value;
     
@@ -491,13 +527,9 @@ async function updateChart() {
     setLoading(true);
     
     try {
-        const response = await fetch(`https://api.binance.com/api/v3/klines?symbol=${selectedSymbol}&interval=${interval}&limit=100`);
-        
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
-        const data = await response.json();
+        const data = await safeFetch(
+            `https://api.binance.com/api/v3/klines?symbol=${selectedSymbol}&interval=${interval}&limit=100`
+        );
         
         if (!data || data.length === 0) {
             throw new Error('No data received from Binance');
@@ -514,53 +546,56 @@ async function updateChart() {
         }));
         
         // Calculate indicators
-        if (showSMA) {
-            const smaData = calculateSMA(prices, 20);
-            const smaChartData = data.map((d, i) => ({
-                x: new Date(d[0]),
-                y: smaData[i]
-            }));
-            priceChart.data.datasets[1].data = smaChartData;
-        } else {
-            priceChart.data.datasets[1].data = [];
-        }
-        
-        if (showRSI) {
-            const rsiData = calculateRSI(prices, 14);
-            const rsiChartData = data.map((d, i) => ({
-                x: new Date(d[0]),
-                y: rsiData[i]
-            }));
-            priceChart.data.datasets[2].data = rsiChartData;
-        } else {
-            priceChart.data.datasets[2].data = [];
-        }
+        try {
+            if (showSMA) {
+                const smaData = calculateSMA(prices, 20);
+                const smaChartData = data.map((d, i) => ({
+                    x: new Date(d[0]),
+                    y: smaData[i]
+                }));
+                priceChart.data.datasets[1].data = smaChartData;
+            } else {
+                priceChart.data.datasets[1].data = [];
+            }
+            
+            if (showRSI) {
+                const rsiData = calculateRSI(prices, 14);
+                const rsiChartData = data.map((d, i) => ({
+                    x: new Date(d[0]),
+                    y: rsiData[i]
+                }));
+                priceChart.data.datasets[2].data = rsiChartData;
+            } else {
+                priceChart.data.datasets[2].data = [];
+            }
 
-        if (showMACD) {
-            const macdData = calculateMACD(prices);
-            const timePoints = data.map(d => new Date(d[0]));
+            if (showMACD) {
+                const macdData = calculateMACD(prices);
+                const timePoints = data.map(d => new Date(d[0]));
 
-            // MACD Line
-            priceChart.data.datasets[3].data = timePoints.map((time, i) => ({
-                x: time,
-                y: macdData.macdLine[i]
-            }));
+                priceChart.data.datasets[3].data = timePoints.map((time, i) => ({
+                    x: time,
+                    y: macdData.macdLine[i]
+                }));
 
-            // Signal Line
-            priceChart.data.datasets[4].data = timePoints.map((time, i) => ({
-                x: time,
-                y: macdData.signalLine[i]
-            }));
+                priceChart.data.datasets[4].data = timePoints.map((time, i) => ({
+                    x: time,
+                    y: macdData.signalLine[i]
+                }));
 
-            // Histogram
-            priceChart.data.datasets[5].data = timePoints.map((time, i) => ({
-                x: time,
-                y: macdData.histogram[i]
-            }));
-        } else {
-            priceChart.data.datasets[3].data = [];
-            priceChart.data.datasets[4].data = [];
-            priceChart.data.datasets[5].data = [];
+                priceChart.data.datasets[5].data = timePoints.map((time, i) => ({
+                    x: time,
+                    y: macdData.histogram[i]
+                }));
+            } else {
+                priceChart.data.datasets[3].data = [];
+                priceChart.data.datasets[4].data = [];
+                priceChart.data.datasets[5].data = [];
+            }
+        } catch (error) {
+            console.error('Error calculating indicators:', error);
+            showError('Error calculating indicators: ' + error.message);
+            return;
         }
         
         // Calculate price change
@@ -1296,4 +1331,45 @@ function initCanvasEvents() {
             pinchStartRange = null;
         }
     }, { passive: true });
+}
+
+// Toggle auto refresh functionality
+function toggleAutoRefresh() {
+    const button = document.getElementById('autoRefresh');
+    if (autoRefreshInterval) {
+        clearInterval(autoRefreshInterval);
+        autoRefreshInterval = null;
+        button.classList.remove('active');
+    } else {
+        updateChart();
+        autoRefreshInterval = setInterval(updateChart, 60000); // Update every minute
+        button.classList.add('active');
+    }
+}
+
+// Toggle SMA indicator
+function toggleSMA() {
+    const button = document.getElementById('smaToggle');
+    showSMA = !showSMA;
+    button.classList.toggle('active');
+    priceChart.options.scales.y.display = true;
+    updateChart();
+}
+
+// Toggle RSI indicator
+function toggleRSI() {
+    const button = document.getElementById('rsiToggle');
+    showRSI = !showRSI;
+    button.classList.toggle('active');
+    priceChart.options.scales.rsi.display = showRSI;
+    updateChart();
+}
+
+// Toggle MACD indicator
+function toggleMACD() {
+    const button = document.getElementById('macdToggle');
+    showMACD = !showMACD;
+    button.classList.toggle('active');
+    priceChart.options.scales.macd.display = showMACD;
+    updateChart();
 }
