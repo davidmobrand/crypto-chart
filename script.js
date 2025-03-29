@@ -14,6 +14,48 @@ let touchStartY = null;
 let pinchStartDistance = null;
 let pinchStartRange = null;
 
+// Toggle functions
+function toggleAutoRefresh() {
+    const button = document.getElementById('autoRefresh');
+    if (autoRefreshInterval) {
+        clearInterval(autoRefreshInterval);
+        autoRefreshInterval = null;
+        button.classList.remove('active');
+        console.log('Auto refresh disabled');
+    } else {
+        updateChart();
+        const interval = document.getElementById('interval').value;
+        const refreshRate = interval.includes('m') ? 30000 : 60000; // 30s for minute intervals, 60s for others
+        autoRefreshInterval = setInterval(updateChart, refreshRate);
+        button.classList.add('active');
+        console.log('Auto refresh enabled with interval:', refreshRate, 'ms');
+    }
+}
+
+function toggleSMA() {
+    const button = document.getElementById('smaToggle');
+    showSMA = !showSMA;
+    button.classList.toggle('active');
+    priceChart.options.scales.y.display = true;
+    updateChart();
+}
+
+function toggleRSI() {
+    const button = document.getElementById('rsiToggle');
+    showRSI = !showRSI;
+    button.classList.toggle('active');
+    priceChart.options.scales.rsi.display = showRSI;
+    updateChart();
+}
+
+function toggleMACD() {
+    const button = document.getElementById('macdToggle');
+    showMACD = !showMACD;
+    button.classList.toggle('active');
+    priceChart.options.scales.macd.display = showMACD;
+    updateChart();
+}
+
 import { calculateSMA, calculateEMA, calculateMACD, calculateRSI } from './calculations.js';
 
 // CORS proxy for API calls
@@ -1344,49 +1386,4 @@ function initCanvasEvents() {
             pinchStartRange = null;
         }
     }, { passive: true });
-}
-
-// Toggle auto refresh functionality
-function toggleAutoRefresh() {
-    const button = document.getElementById('autoRefresh');
-    if (autoRefreshInterval) {
-        clearInterval(autoRefreshInterval);
-        autoRefreshInterval = null;
-        button.classList.remove('active');
-        console.log('Auto refresh disabled');
-    } else {
-        updateChart();
-        const interval = document.getElementById('interval').value;
-        const refreshRate = interval.includes('m') ? 30000 : 60000; // 30s for minute intervals, 60s for others
-        autoRefreshInterval = setInterval(updateChart, refreshRate);
-        button.classList.add('active');
-        console.log('Auto refresh enabled with interval:', refreshRate, 'ms');
-    }
-}
-
-// Toggle SMA indicator
-function toggleSMA() {
-    const button = document.getElementById('smaToggle');
-    showSMA = !showSMA;
-    button.classList.toggle('active');
-    priceChart.options.scales.y.display = true;
-    updateChart();
-}
-
-// Toggle RSI indicator
-function toggleRSI() {
-    const button = document.getElementById('rsiToggle');
-    showRSI = !showRSI;
-    button.classList.toggle('active');
-    priceChart.options.scales.rsi.display = showRSI;
-    updateChart();
-}
-
-// Toggle MACD indicator
-function toggleMACD() {
-    const button = document.getElementById('macdToggle');
-    showMACD = !showMACD;
-    button.classList.toggle('active');
-    priceChart.options.scales.macd.display = showMACD;
-    updateChart();
 }
