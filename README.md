@@ -21,6 +21,15 @@ Visit the live application at: [https://davidmobrand.github.io/crypto-chart/](ht
 - Smart trading recommendations with historical tracking
 - Recommendation storage and management
 
+## Project Structure
+
+- `index.html` - Main application HTML file
+- `script.js` - Core application logic
+- `calculations.js` - Technical indicator calculations
+- `favicon.ico` - Application icon
+- `README.md` - Project documentation
+- `INDICATORS.md` - Technical indicators documentation
+
 ## Getting Started
 
 1. Open `index.html` in a web browser
