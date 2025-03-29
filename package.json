@@ -16,6 +16,11 @@
   ],
   "author": "David Mobrand",
   "license": "MIT",
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.4.2",
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0"
+  },
   "jest": {
     "testEnvironment": "jsdom",
     "setupFilesAfterEnv": ["<rootDir>/tests/setup.js"],

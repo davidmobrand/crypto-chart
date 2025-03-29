@@ -12,9 +12,11 @@ global.localStorage = localStorageMock;
 // Mock fetch
 global.fetch = jest.fn();
 
-// Reset mocks before each test
+// Clear mocks before each test
 beforeEach(() => {
     localStorage.getItem.mockClear();
     localStorage.setItem.mockClear();
+    localStorage.removeItem.mockClear();
+    localStorage.clear.mockClear();
     fetch.mockClear();
 }); 
