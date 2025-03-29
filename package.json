@@ -3,10 +3,11 @@
   "version": "1.0.0",
   "description": "Cryptocurrency price chart application with technical indicators and trading recommendations",
   "main": "script.js",
+  "type": "module",
   "scripts": {
-    "test": "jest",
-    "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage"
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
+    "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage"
   },
   "keywords": [
     "cryptocurrency",
@@ -17,13 +18,18 @@
   "author": "David Mobrand",
   "license": "MIT",
   "devDependencies": {
+    "@babel/preset-env": "^7.24.0",
     "@testing-library/jest-dom": "^6.4.2",
+    "babel-jest": "^29.7.0",
     "jest": "^29.7.0",
     "jest-environment-jsdom": "^29.7.0"
   },
   "jest": {
     "testEnvironment": "jsdom",
     "setupFilesAfterEnv": ["<rootDir>/tests/setup.js"],
+    "transform": {
+      "^.+\\.[t|j]sx?$": "babel-jest"
+    },
     "collectCoverageFrom": [
       "script.js"
     ],
