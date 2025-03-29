@@ -252,108 +252,82 @@ function formatNumber(num) {
     return num.toString();
 }
 
-// Calculate Simple Moving Average
-function calculateSMA(data, period) {
-    const sma = [];
-    for (let i = 0; i < data.length; i++) {
-        if (i < period - 1) {
-            sma.push(null);
-            continue;
+// Technical indicator calculations
+export function calculateSMA(data, period) {
+    const result = new Array(data.length).fill(null);
+    for (let i = period - 1; i < data.length; i++) {
+        const slice = data.slice(i - period + 1, i + 1);
+        result[i] = slice.reduce((sum, val) => sum + val, 0) / period;
+    }
+    return result;
+}
+
+export function calculateEMA(data, period) {
+    const k = 2 / (period + 1);
+    const result = new Array(data.length).fill(null);
+    let prevEMA = data[0];
+    
+    result[0] = prevEMA;
+    for (let i = 1; i < data.length; i++) {
+        const ema = (data[i] * k) + (prevEMA * (1 - k));
+        result[i] = ema;
+        prevEMA = ema;
+    }
+    return result;
+}
+
+export function calculateMACD(prices) {
+    const fastEMA = calculateEMA(prices, 12);
+    const slowEMA = calculateEMA(prices, 26);
+    const macdLine = new Array(prices.length).fill(null);
+    
+    for (let i = 0; i < prices.length; i++) {
+        if (fastEMA[i] !== null && slowEMA[i] !== null) {
+            macdLine[i] = fastEMA[i] - slowEMA[i];
         }
-        const sum = data.slice(i - period + 1, i + 1).reduce((a, b) => a + b, 0);
-        sma.push(sum / period);
     }
-    return sma;
-}
-
-// Calculate Exponential Moving Average
-function calculateEMA(data, period) {
-    const ema = [];
-    const multiplier = 2 / (period + 1);
-
-    // Start with SMA for the first EMA value
-    let previousEMA = data.slice(0, period).reduce((a, b) => a + b) / period;
-    ema.push(previousEMA);
-
-    // Calculate EMA for remaining points
-    for (let i = period; i < data.length; i++) {
-        const currentEMA = (data[i] - previousEMA) * multiplier + previousEMA;
-        ema.push(currentEMA);
-        previousEMA = currentEMA;
-    }
-
-    // Add null values for the initial period-1 points
-    return Array(period - 1).fill(null).concat(ema);
-}
-
-// Calculate MACD
-function calculateMACD(prices) {
-    // Standard MACD parameters
-    const fastPeriod = 12;
-    const slowPeriod = 26;
-    const signalPeriod = 9;
-
-    // Calculate fast and slow EMAs
-    const fastEMA = calculateEMA(prices, fastPeriod);
-    const slowEMA = calculateEMA(prices, slowPeriod);
-
-    // Calculate MACD line
-    const macdLine = fastEMA.map((fast, i) => {
-        if (fast === null || slowEMA[i] === null) return null;
-        return fast - slowEMA[i];
-    });
-
-    // Calculate signal line (9-day EMA of MACD line)
-    const signalLine = calculateEMA(macdLine.filter(x => x !== null), signalPeriod);
-    const fullSignalLine = Array(macdLine.length - signalLine.length).fill(null).concat(signalLine);
-
-    // Calculate histogram
-    const histogram = macdLine.map((macd, i) => {
-        if (macd === null || fullSignalLine[i] === null) return null;
-        return macd - fullSignalLine[i];
-    });
-
+    
+    const signalLine = calculateEMA(macdLine.filter(x => x !== null), 9);
+    const histogram = macdLine.map((macd, i) => 
+        macd !== null && signalLine[i] !== null ? macd - signalLine[i] : null
+    );
+    
     return {
         macdLine,
-        signalLine: fullSignalLine,
+        signalLine,
         histogram
     };
 }
 
-// Calculate RSI
-function calculateRSI(prices, period = 14) {
-    const rsi = [];
-    let gains = [];
-    let losses = [];
+export function calculateRSI(prices, period = 14) {
+    const result = new Array(prices.length).fill(null);
+    const gains = new Array(prices.length).fill(0);
+    const losses = new Array(prices.length).fill(0);
     
-    // Calculate initial price changes and gains/losses
+    // Calculate gains and losses
     for (let i = 1; i < prices.length; i++) {
-        const change = prices[i] - prices[i - 1];
-        gains.push(change > 0 ? change : 0);
-        losses.push(change < 0 ? -change : 0);
-    }
-    
-    // Calculate RSI for each point
-    for (let i = 0; i < prices.length; i++) {
-        if (i < period) {
-            rsi.push(null);
-            continue;
-        }
-        
-        // Calculate average gain and loss over the period
-        const avgGain = gains.slice(i - period, i).reduce((a, b) => a + b) / period;
-        const avgLoss = losses.slice(i - period, i).reduce((a, b) => a + b) / period;
-        
-        // Calculate RS and RSI
-        if (avgLoss === 0) {
-            rsi.push(100);
+        const difference = prices[i] - prices[i - 1];
+        if (difference > 0) {
+            gains[i] = difference;
         } else {
-            const rs = avgGain / avgLoss;
-            rsi.push(100 - (100 / (1 + rs)));
+            losses[i] = Math.abs(difference);
         }
     }
     
-    return rsi;
+    // Calculate RSI
+    for (let i = period; i < prices.length; i++) {
+        const avgGain = gains.slice(i - period + 1, i + 1).reduce((sum, val) => sum + val, 0) / period;
+        const avgLoss = losses.slice(i - period + 1, i + 1).reduce((sum, val) => sum + val, 0) / period;
+        
+        if (avgLoss === 0) {
+            result[i] = 100;
+        } else {
+            const RS = avgGain / avgLoss;
+            result[i] = 100 - (100 / (1 + RS));
+        }
+    }
+    
+    return result;
 }
 
 // Toggle auto-refresh

@@ -4,29 +4,17 @@ import { expect, jest, beforeEach } from '@jest/globals';
 expect.extend(matchers);
 
 // Mock localStorage
-const localStorageMock = {
-    getItem: () => null,
-    setItem: () => null,
-    removeItem: () => null,
-    clear: () => null
+global.localStorage = {
+    getItem: jest.fn(),
+    setItem: jest.fn(),
+    removeItem: jest.fn(),
+    clear: jest.fn()
 };
-
-global.localStorage = localStorageMock;
-
-// Create spies for localStorage methods
-const getItemSpy = jest.spyOn(localStorage, 'getItem');
-const setItemSpy = jest.spyOn(localStorage, 'setItem');
-const removeItemSpy = jest.spyOn(localStorage, 'removeItem');
-const clearSpy = jest.spyOn(localStorage, 'clear');
 
 // Mock fetch
 global.fetch = jest.fn();
 
 // Clear mocks before each test
 beforeEach(() => {
-    getItemSpy.mockClear();
-    setItemSpy.mockClear();
-    removeItemSpy.mockClear();
-    clearSpy.mockClear();
-    fetch.mockClear();
+    jest.clearAllMocks();
 }); 
