@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Generate Documentation Images</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .canvas-container {
+            margin: 20px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background: white;
+        }
+        canvas {
+            margin: 10px 0;
+        }
+        button {
+            margin: 10px;
+            padding: 8px 16px;
+            background: #1976d2;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="canvas-container">
+        <h2>Documentation Image Generator</h2>
+        <button onclick="generateAllImages()">Generate All Images</button>
+        <div id="canvasContainer"></div>
+    </div>
+
+    <script>
+        // Helper function to generate random price data
+        function generatePriceData(days = 30, trend = 'up') {
+            const data = [];
+            let price = 45000 + Math.random() * 1000;
+            
+            for (let i = 0; i < days; i++) {
+                const change = (trend === 'up' ? 1 : -1) * (Math.random() * 200 - 100);
+                price += change;
+                data.push({
+                    x: new Date(Date.now() - (days - i) * 24 * 60 * 60 * 1000),
+                    y: price
+                });
+            }
+            return data;
+        }
+
+        // Generate SMA data
+        function calculateSMA(data, period) {
+            return data.map((point, index) => {
+                if (index < period - 1) return null;
+                const sum = data.slice(index - period + 1, index + 1)
+                    .reduce((total, current) => total + current.y, 0);
+                return {
+                    x: point.x,
+                    y: sum / period
+                };
+            });
+        }
+
+        // Generate RSI data
+        function calculateRSI(data, period = 14) {
+            const gains = [];
+            const losses = [];
+            
+            for (let i = 1; i < data.length; i++) {
+                const change = data[i].y - data[i-1].y;
+                gains.push(change > 0 ? change : 0);
+                losses.push(change < 0 ? -change : 0);
+            }
+            
+            const rsi = data.map((point, i) => {
+                if (i < period) return null;
+                const avgGain = gains.slice(i - period, i).reduce((a, b) => a + b) / period;
+                const avgLoss = losses.slice(i - period, i).reduce((a, b) => a + b) / period;
+                const rs = avgGain / (avgLoss || 1);
+                return {
+                    x: point.x,
+                    y: 100 - (100 / (1 + rs))
+                };
+            });
+            
+            return rsi;
+        }
+
+        // Generate MACD data
+        function calculateMACD(data) {
+            const ema12 = calculateEMA(data, 12);
+            const ema26 = calculateEMA(data, 26);
+            
+            const macdLine = data.map((point, i) => ({
+                x: point.x,
+                y: (ema12[i]?.y || 0) - (ema26[i]?.y || 0)
+            }));
+            
+            const signalLine = calculateEMA(macdLine, 9);
+            
+            const histogram = macdLine.map((point, i) => ({
+                x: point.x,
+                y: point.y - (signalLine[i]?.y || 0)
+            }));
+            
+            return { macdLine, signalLine, histogram };
+        }
+
+        // Calculate EMA
+        function calculateEMA(data, period) {
+            const multiplier = 2 / (period + 1);
+            const ema = [];
+            
+            for (let i = 0; i < data.length; i++) {
+                if (i < period - 1) {
+                    ema.push(null);
+                    continue;
+                }
+                
+                if (i === period - 1) {
+                    const sum = data.slice(0, period).reduce((total, point) => total + point.y, 0);
+                    ema.push({
+                        x: data[i].x,
+                        y: sum / period
+                    });
+                    continue;
+                }
+                
+                ema.push({
+                    x: data[i].x,
+                    y: (data[i].y - ema[i-1].y) * multiplier + ema[i-1].y
+                });
+            }
+            
+            return ema;
+        }
+
+        // Create and save canvas as image
+        function saveCanvas(canvas, filename) {
+            const link = document.createElement('a');
+            link.download = filename;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        }
+
+        // Generate all documentation images
+        async function generateAllImages() {
+            // Generate SMA images
+            const smaCanvas = document.createElement('canvas');
+            smaCanvas.width = 800;
+            smaCanvas.height = 400;
+            const smaCtx = smaCanvas.getContext('2d');
+            
+            const smaData = generatePriceData(30, 'up');
+            const sma20 = calculateSMA(smaData, 20);
+            
+            new Chart(smaCtx, {
+                type: 'line',
+                data: {
+                    datasets: [{
+                        label: 'Price',
+                        data: smaData,
+                        borderColor: '#1976d2',
+                        borderWidth: 1.5,
+                        fill: false
+                    }, {
+                        label: 'SMA (20)',
+                        data: sma20,
+                        borderColor: '#ff9800',
+                        borderWidth: 1.5,
+                        fill: false
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { type: 'time' },
+                        y: { beginAtZero: false }
+                    }
+                }
+            });
+            
+            saveCanvas(smaCanvas, 'images/sma-uptrend.png');
+
+            // Generate RSI images
+            const rsiCanvas = document.createElement('canvas');
+            rsiCanvas.width = 800;
+            rsiCanvas.height = 400;
+            const rsiCtx = rsiCanvas.getContext('2d');
+            
+            const rsiData = generatePriceData(30, 'down');
+            const rsi = calculateRSI(rsiData);
+            
+            new Chart(rsiCtx, {
+                type: 'line',
+                data: {
+                    datasets: [{
+                        label: 'RSI',
+                        data: rsi,
+                        borderColor: '#4caf50',
+                        borderWidth: 1.5,
+                        fill: false
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { type: 'time' },
+                        y: {
+                            beginAtZero: true,
+                            max: 100,
+                            grid: {
+                                color: (ctx) => {
+                                    if (ctx.tick.value === 70 || ctx.tick.value === 30) return '#ff9800';
+                                    return '#e0e0e0';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+            
+            saveCanvas(rsiCanvas, 'images/rsi-overbought.png');
+
+            // Generate MACD images
+            const macdCanvas = document.createElement('canvas');
+            macdCanvas.width = 800;
+            macdCanvas.height = 400;
+            const macdCtx = macdCanvas.getContext('2d');
+            
+            const macdPriceData = generatePriceData(60);
+            const { macdLine, signalLine, histogram } = calculateMACD(macdPriceData);
+            
+            new Chart(macdCtx, {
+                type: 'line',
+                data: {
+                    datasets: [{
+                        label: 'MACD Line',
+                        data: macdLine,
+                        borderColor: '#2196f3',
+                        borderWidth: 1.5,
+                        fill: false
+                    }, {
+                        label: 'Signal Line',
+                        data: signalLine,
+                        borderColor: '#f44336',
+                        borderWidth: 1.5,
+                        fill: false
+                    }, {
+                        label: 'Histogram',
+                        data: histogram,
+                        type: 'bar',
+                        backgroundColor: (ctx) => {
+                            const value = ctx.raw.y;
+                            return value >= 0 ? 'rgba(76, 175, 80, 0.3)' : 'rgba(244, 67, 54, 0.3)';
+                        },
+                        borderColor: (ctx) => {
+                            const value = ctx.raw.y;
+                            return value >= 0 ? '#4caf50' : '#f44336';
+                        }
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { type: 'time' },
+                        y: { beginAtZero: true }
+                    }
+                }
+            });
+            
+            saveCanvas(macdCanvas, 'images/macd-crossover.png');
+
+            // Generate UI mockup images
+            const mockupCanvas = document.createElement('canvas');
+            mockupCanvas.width = 800;
+            mockupCanvas.height = 400;
+            const mockupCtx = mockupCanvas.getContext('2d');
+            
+            // Draw exchange selector mockup
+            mockupCtx.fillStyle = '#ffffff';
+            mockupCtx.fillRect(0, 0, 800, 400);
+            mockupCtx.strokeStyle = '#ddd';
+            mockupCtx.strokeRect(10, 10, 780, 50);
+            mockupCtx.fillStyle = '#1976d2';
+            mockupCtx.font = '16px Arial';
+            mockupCtx.fillText('Exchange:', 20, 40);
+            mockupCtx.fillStyle = '#000000';
+            mockupCtx.fillText('Binance ▼', 100, 40);
+            
+            saveCanvas(mockupCanvas, 'images/exchange-selector.png');
+            
+            // Clear and draw symbol selection mockup
+            mockupCtx.clearRect(0, 0, 800, 400);
+            mockupCtx.fillStyle = '#ffffff';
+            mockupCtx.fillRect(0, 0, 800, 400);
+            mockupCtx.strokeStyle = '#ddd';
+            mockupCtx.strokeRect(10, 10, 250, 380);
+            mockupCtx.fillStyle = '#000000';
+            mockupCtx.font = '14px Arial';
+            mockupCtx.fillText('Search coins...', 20, 35);
+            mockupCtx.strokeRect(15, 15, 240, 30);
+            
+            saveCanvas(mockupCanvas, 'images/symbol-selection.png');
+            
+            // Generate recommendations mockup
+            mockupCtx.clearRect(0, 0, 800, 400);
+            mockupCtx.fillStyle = '#ffffff';
+            mockupCtx.fillRect(0, 0, 800, 400);
+            mockupCtx.strokeStyle = '#ddd';
+            mockupCtx.strokeRect(10, 10, 780, 380);
+            mockupCtx.fillStyle = '#1976d2';
+            mockupCtx.font = '20px Arial';
+            mockupCtx.fillText('Recommendations', 20, 40);
+            
+            // Draw table
+            const headers = ['Trading Pair', 'Current Price', 'Target Price'];
+            const data = [
+                ['BTC/USDT', '$45,123.45', '$45,574.68'],
+                ['ETH/USDT', '$2,345.67', '$2,369.13'],
+                ['BNB/USDT', '$312.45', '$315.57'],
+                ['SOL/USDT', '$89.34', '$90.23'],
+                ['ADA/USDT', '$1.23', '$1.24']
+            ];
+            
+            let y = 80;
+            headers.forEach((header, i) => {
+                mockupCtx.fillStyle = '#666666';
+                mockupCtx.fillText(header, 20 + i * 250, y);
+            });
+            
+            y += 30;
+            data.forEach(row => {
+                row.forEach((cell, i) => {
+                    mockupCtx.fillStyle = '#000000';
+                    mockupCtx.fillText(cell, 20 + i * 250, y);
+                });
+                y += 40;
+            });
+            
+            saveCanvas(mockupCanvas, 'images/recommendations.png');
+        }
+    </script>
+</body>
+</html> 

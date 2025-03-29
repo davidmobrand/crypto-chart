@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cryptocurrency Price Chart - User Guide</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            line-height: 1.6;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1, h2, h3 {
+            color: #1976d2;
+        }
+        h1 {
+            border-bottom: 2px solid #1976d2;
+            padding-bottom: 10px;
+        }
+        h2 {
+            margin-top: 30px;
+        }
+        ul {
+            padding-left: 20px;
+        }
+        li {
+            margin: 8px 0;
+        }
+        .feature-list li {
+            list-style-type: none;
+            padding-left: 24px;
+            position: relative;
+        }
+        .feature-list li:before {
+            content: "•";
+            color: #1976d2;
+            font-size: 20px;
+            position: absolute;
+            left: 0;
+        }
+        code {
+            background: #f8f9fa;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        .nav-links {
+            text-align: right;
+            margin-bottom: 20px;
+        }
+        .nav-links a {
+            color: #1976d2;
+            text-decoration: none;
+            margin-left: 20px;
+        }
+        .nav-links a:hover {
+            text-decoration: underline;
+        }
+        .image-container {
+            margin: 20px 0;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .image-container img {
+            max-width: 100%;
+            height: auto;
+            display: block;
+        }
+        .image-caption {
+            background: #f8f9fa;
+            padding: 10px;
+            font-size: 14px;
+            color: #666;
+            border-top: 1px solid #ddd;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="nav-links">
+            <a href="index.html">← Back to Chart</a>
+            <a href="indicators.html">Technical Indicators →</a>
+        </div>
+        
+        <h1>Cryptocurrency Price Chart</h1>
+        
+        <p>A real-time cryptocurrency price chart application that allows you to monitor cryptocurrency prices, analyze technical indicators, and track your favorite pairs.</p>
+        
+        <h2>Features</h2>
+        <ul class="feature-list">
+            <li>Support for multiple cryptocurrency exchanges (Binance and Kraken)</li>
+            <li>Real-time price tracking for all USDT trading pairs</li>
+            <li>Multiple timeframe options (varies by exchange)</li>
+            <li>Technical indicators (SMA, RSI, MACD)</li>
+            <li>Favorites system for quick access to preferred pairs</li>
+            <li>Advanced filtering and search capabilities</li>
+            <li>Auto-refresh functionality</li>
+            <li>Detailed price and volume information</li>
+            <li>Smart trading recommendations for short-term gains</li>
+        </ul>
+        
+        <h2>How to Use</h2>
+        
+        <h3>Trading Recommendations</h3>
+        <p>The recommendations feature helps you identify potential short-term trading opportunities based on technical analysis.</p>
+        <ul>
+            <li>Click the "Recommendations" button next to the title to view suggested trades</li>
+            <li>A progress indicator will show while the system analyzes trading pairs</li>
+            <li>Each recommendation shows:
+                <ul>
+                    <li>The coin pair name</li>
+                    <li>Current market price</li>
+                    <li>Target prices (0.5%, 1%, and 2% gains)</li>
+                    <li>Estimated time to reach each target</li>
+                </ul>
+            </li>
+            <li>Historical Recommendations:
+                <ul>
+                    <li>The system automatically stores the last 10 recommendation sets</li>
+                    <li>Access previous recommendations using the dropdown next to the Recommendations button</li>
+                    <li>Each stored recommendation shows its timestamp</li>
+                    <li>Delete individual historical recommendations using the Delete button in the modal</li>
+                    <li>Deleted recommendations are permanently removed from storage</li>
+                </ul>
+            </li>
+            <li>Recommendations are designed for short-term trades (5-60 minutes)</li>
+            <li>The list updates each time you open the recommendations modal</li>
+            <li>The system analyzes all trading pairs using these criteria:
+                <ul>
+                    <li>Recent price momentum (last 30 minutes)</li>
+                    <li>Volume increase (minimum 20% above average)</li>
+                    <li>Price volatility (sufficient for target movements)</li>
+                    <li>Trading liquidity (among top 100 pairs by volume)</li>
+                </ul>
+            </li>
+        </ul>
+        
+        <h3>Exchange Selection</h3>
+        <p>Choose your preferred cryptocurrency exchange using the dropdown menu in the top-right corner.</p>
+        <ul>
+            <li>Choose between Binance and Kraken using the exchange dropdown</li>
+            <li>Available trading pairs and intervals will update based on the selected exchange</li>
+            <li>Note that Kraken uses XBT instead of BTC for Bitcoin pairs</li>
+            <li>Each exchange has slightly different interval options:
+                <ul>
+                    <li>Binance: 1m, 3m, 5m, 15m, 1h, 4h, 1d</li>
+                    <li>Kraken: 1m, 5m, 15m, 1h, 4h, 1d</li>
+                </ul>
+            </li>
+        </ul>
+        
+        <h3>Symbol Selection</h3>
+        <p>Use the left sidebar to browse and select trading pairs. The interface provides multiple ways to find your desired trading pair.</p>
+        <ul>
+            <li>Use the left sidebar to browse available trading pairs</li>
+            <li>Search for specific coins using the search box at the top of the sidebar</li>
+            <li>Filter coins by:
+                <ul>
+                    <li>All: Shows all available trading pairs</li>
+                    <li>Favorites: Shows your starred pairs</li>
+                    <li>Top 100: Shows top 100 pairs by volume</li>
+                </ul>
+            </li>
+            <li>Click the star (★) icon next to any pair to add/remove it from favorites</li>
+            <li>Click any pair to load its chart in the main view</li>
+        </ul>
+        
+        <h3>Chart Controls</h3>
+        <p>The chart control panel above the main chart provides options for timeframes and technical indicators.</p>
+        <ol>
+            <li><strong>Timeframe Selection</strong>
+                <ul>
+                    <li>Choose from various intervals (1m to 1d)</li>
+                    <li>Changes take effect immediately</li>
+                </ul>
+            </li>
+            <li><strong>Auto Refresh</strong>
+                <ul>
+                    <li>Toggle automatic updates</li>
+                    <li>30-second refresh for minute intervals</li>
+                    <li>60-second refresh for hour/day intervals</li>
+                </ul>
+            </li>
+            <li><strong>Technical Indicators</strong>
+                <ul>
+                    <li>SMA (20): Simple Moving Average</li>
+                    <li>RSI (14): Relative Strength Index</li>
+                    <li>MACD: Moving Average Convergence Divergence</li>
+                    <li>Toggle indicators on/off using the buttons</li>
+                </ul>
+            </li>
+        </ol>
+        
+        <h3>Price Information</h3>
+        <p>The price information panel displays key metrics for the selected trading pair.</p>
+        <ul>
+            <li>Current price with 24h price change (green for positive, red for negative)</li>
+            <li>Trading volume in USDT</li>
+            <li>Favorite status indicator (star icon)</li>
+            <li>Real-time updates with price movements</li>
+        </ul>
+        
+        <h2>Getting Started</h2>
+        <ol>
+            <li>Open <code>index.html</code> in a web browser</li>
+            <li>The chart will initialize with BTC/USDT by default</li>
+            <li>Use the left sidebar to select different trading pairs</li>
+            <li>Add frequently used pairs to favorites for quick access</li>
+            <li>Enable auto-refresh for real-time updates</li>
+            <li>Toggle technical indicators as needed</li>
+        </ol>
+        
+        <h2>Browser Compatibility</h2>
+        <p>The application is compatible with modern web browsers that support:</p>
+        <ul>
+            <li>ES6+ JavaScript</li>
+            <li>Chart.js</li>
+            <li>WebSocket connections (for real-time updates)</li>
+            <li>Local Storage (for saving favorites)</li>
+        </ul>
+    </div>
+</body>
+</html> 

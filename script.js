@@ -1,0 +1,1269 @@
+let priceChart;
+let autoRefreshInterval;
+let showSMA = false;
+let showRSI = false;
+let showMACD = false;
+let selectedSymbol = 'BTCUSDT';
+let symbols = [];
+let symbolData = {};
+let favorites = new Set(JSON.parse(localStorage.getItem('favorites') || '[]'));
+let currentFilter = 'all';
+let currentExchange = 'binance';
+
+// Exchange-specific API endpoints
+const EXCHANGES = {
+    binance: {
+        baseUrl: 'https://api.binance.com/api/v3',
+        klines: '/klines',
+        ticker24h: '/ticker/24hr',
+        exchangeInfo: '/exchangeInfo',
+        symbolTransform: (symbol) => symbol,
+        reverseTransform: (symbol) => symbol,
+        intervals: {
+            '1m': '1m',
+            '3m': '3m',
+            '5m': '5m',
+            '15m': '15m',
+            '1h': '1h',
+            '4h': '4h',
+            '1d': '1d'
+        }
+    },
+    kraken: {
+        baseUrl: 'https://api.kraken.com/0/public',
+        klines: '/OHLC',
+        ticker24h: '/Ticker',
+        exchangeInfo: '/AssetPairs',
+        symbolTransform: (symbol) => {
+            // Convert Binance style to Kraken style (e.g., BTCUSDT -> XBT/USDT)
+            const base = symbol.slice(0, -4);
+            const quote = symbol.slice(-4);
+            const krakenBase = base === 'BTC' ? 'XBT' : base;
+            return `${krakenBase}/${quote}`;
+        },
+        reverseTransform: (symbol) => {
+            // Convert Kraken style to Binance style (e.g., XBT/USDT -> BTCUSDT)
+            const [base, quote] = symbol.split('/');
+            const binanceBase = base === 'XBT' ? 'BTC' : base;
+            return `${binanceBase}${quote}`;
+        },
+        intervals: {
+            '1m': '1',
+            '5m': '5',
+            '15m': '15',
+            '1h': '60',
+            '4h': '240',
+            '1d': '1440'
+        }
+    }
+};
+
+// Initialize the chart when the page loads
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('Page loaded, initializing chart...');
+    initChart();
+    initSymbolList();
+    updateChart();
+    
+    // Setup filter buttons
+    document.querySelectorAll('.filter-button').forEach(button => {
+        button.addEventListener('click', () => {
+            document.querySelectorAll('.filter-button').forEach(b => b.classList.remove('active'));
+            button.classList.add('active');
+            currentFilter = button.dataset.filter;
+            filterSymbols();
+        });
+    });
+});
+
+// Refresh symbol list
+async function refreshSymbolList() {
+    const refreshButton = document.querySelector('.refresh-button');
+    refreshButton.style.transform = 'rotate(360deg)';
+    refreshButton.style.transition = 'transform 1s';
+    await initSymbolList();
+    setTimeout(() => {
+        refreshButton.style.transform = '';
+        refreshButton.style.transition = '';
+    }, 1000);
+}
+
+// Initialize symbol list
+async function initSymbolList() {
+    try {
+        const [exchangeInfo, ticker24h] = await Promise.all([
+            fetch('https://api.binance.com/api/v3/exchangeInfo').then(r => r.json()),
+            fetch('https://api.binance.com/api/v3/ticker/24hr').then(r => r.json())
+        ]);
+        
+        // Process and store symbol data
+        symbolData = {};
+        ticker24h.forEach(ticker => {
+            if (ticker.symbol.endsWith('USDT')) {
+                symbolData[ticker.symbol] = {
+                    price: parseFloat(ticker.lastPrice),
+                    change: parseFloat(ticker.priceChangePercent),
+                    volume: parseFloat(ticker.quoteVolume), // USDT volume
+                    high24h: parseFloat(ticker.highPrice),
+                    low24h: parseFloat(ticker.lowPrice)
+                };
+            }
+        });
+        
+        // Filter and sort symbols
+        symbols = exchangeInfo.symbols
+            .filter(s => s.symbol.endsWith('USDT') && s.status === 'TRADING')
+            .map(s => ({
+                ...s,
+                ...symbolData[s.symbol],
+                isFavorite: favorites.has(s.symbol)
+            }))
+            .sort((a, b) => b.volume - a.volume);
+        
+        filterSymbols();
+        
+        // Setup search functionality
+        const searchInput = document.getElementById('symbolSearch');
+        const symbolList = document.getElementById('symbolList');
+        
+        searchInput.addEventListener('focus', () => {
+            symbolList.classList.add('active');
+        });
+        
+        searchInput.addEventListener('input', () => filterSymbols());
+        
+        // Close list when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.symbol-select-container')) {
+                symbolList.classList.remove('active');
+            }
+        });
+        
+    } catch (error) {
+        console.error('Error fetching symbols:', error);
+        showError('Error loading symbol list');
+    }
+}
+
+// Filter and display symbols based on current criteria
+function filterSymbols() {
+    const searchTerm = document.getElementById('symbolSearch').value.toUpperCase();
+    let filteredSymbols = symbols;
+    
+    // Apply current filter
+    switch (currentFilter) {
+        case 'favorites':
+            filteredSymbols = filteredSymbols.filter(s => favorites.has(s.symbol));
+            break;
+        case 'top100':
+            filteredSymbols = filteredSymbols.slice(0, 100);
+            break;
+    }
+    
+    // Apply search filter
+    if (searchTerm) {
+        filteredSymbols = filteredSymbols.filter(s => 
+            s.symbol.includes(searchTerm) || 
+            s.baseAsset.includes(searchTerm)
+        );
+    }
+    
+    updateSymbolList(filteredSymbols);
+}
+
+// Toggle favorite status for a symbol
+function toggleFavorite(symbol) {
+    if (favorites.has(symbol)) {
+        favorites.delete(symbol);
+    } else {
+        favorites.add(symbol);
+    }
+    localStorage.setItem('favorites', JSON.stringify([...favorites]));
+    
+    // Update symbol data
+    const symbolInfo = symbols.find(s => s.symbol === symbol);
+    if (symbolInfo) {
+        symbolInfo.isFavorite = favorites.has(symbol);
+    }
+    
+    // Refresh display if on favorites filter
+    if (currentFilter === 'favorites') {
+        filterSymbols();
+    } else {
+        // Just update the star
+        const starElement = document.querySelector(`[data-symbol="${symbol}"] .favorite-star`);
+        if (starElement) {
+            starElement.classList.toggle('active');
+        }
+    }
+}
+
+// Update symbol list display
+function updateSymbolList(symbolsToShow) {
+    const symbolList = document.getElementById('symbolList');
+    symbolList.innerHTML = '';
+    
+    symbolsToShow.forEach(symbol => {
+        const div = document.createElement('div');
+        div.className = `symbol-item${symbol.symbol === selectedSymbol ? ' selected' : ''}`;
+        
+        const changeClass = symbol.change >= 0 ? 'positive-change' : 'negative-change';
+        const changePrefix = symbol.change >= 0 ? '+' : '';
+        
+        div.innerHTML = `
+            <span class="favorite-star${symbol.isFavorite ? ' active' : ''}" data-symbol="${symbol.symbol}">★</span>
+            <div class="symbol-info">
+                <span class="symbol-name">${symbol.baseAsset}/USDT</span>
+                <span class="symbol-volume">Vol: ${formatNumber(symbol.volume)} USDT</span>
+            </div>
+            <div class="symbol-price-info">
+                <div class="symbol-current-price">$${formatPrice(symbol.price)}</div>
+                <div class="${changeClass}">${changePrefix}${symbol.change.toFixed(2)}%</div>
+            </div>
+        `;
+        
+        // Setup click handlers
+        div.querySelector('.favorite-star').addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleFavorite(symbol.symbol);
+        });
+        
+        div.addEventListener('click', () => {
+            selectedSymbol = symbol.symbol;
+            symbolList.classList.remove('active');
+            updateChart();
+            
+            // Update selected state
+            document.querySelectorAll('.symbol-item').forEach(item => {
+                item.classList.remove('selected');
+            });
+            div.classList.add('selected');
+        });
+        
+        symbolList.appendChild(div);
+    });
+}
+
+// Format large numbers with K, M, B suffixes
+function formatNumber(num) {
+    if (num >= 1000000000) return (num / 1000000000).toFixed(1) + 'B';
+    if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+    if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+    return num.toString();
+}
+
+// Calculate Simple Moving Average
+function calculateSMA(data, period) {
+    const sma = [];
+    for (let i = 0; i < data.length; i++) {
+        if (i < period - 1) {
+            sma.push(null);
+            continue;
+        }
+        const sum = data.slice(i - period + 1, i + 1).reduce((a, b) => a + b, 0);
+        sma.push(sum / period);
+    }
+    return sma;
+}
+
+// Calculate Exponential Moving Average
+function calculateEMA(data, period) {
+    const ema = [];
+    const multiplier = 2 / (period + 1);
+
+    // Start with SMA for the first EMA value
+    let previousEMA = data.slice(0, period).reduce((a, b) => a + b) / period;
+    ema.push(previousEMA);
+
+    // Calculate EMA for remaining points
+    for (let i = period; i < data.length; i++) {
+        const currentEMA = (data[i] - previousEMA) * multiplier + previousEMA;
+        ema.push(currentEMA);
+        previousEMA = currentEMA;
+    }
+
+    // Add null values for the initial period-1 points
+    return Array(period - 1).fill(null).concat(ema);
+}
+
+// Calculate MACD
+function calculateMACD(prices) {
+    // Standard MACD parameters
+    const fastPeriod = 12;
+    const slowPeriod = 26;
+    const signalPeriod = 9;
+
+    // Calculate fast and slow EMAs
+    const fastEMA = calculateEMA(prices, fastPeriod);
+    const slowEMA = calculateEMA(prices, slowPeriod);
+
+    // Calculate MACD line
+    const macdLine = fastEMA.map((fast, i) => {
+        if (fast === null || slowEMA[i] === null) return null;
+        return fast - slowEMA[i];
+    });
+
+    // Calculate signal line (9-day EMA of MACD line)
+    const signalLine = calculateEMA(macdLine.filter(x => x !== null), signalPeriod);
+    const fullSignalLine = Array(macdLine.length - signalLine.length).fill(null).concat(signalLine);
+
+    // Calculate histogram
+    const histogram = macdLine.map((macd, i) => {
+        if (macd === null || fullSignalLine[i] === null) return null;
+        return macd - fullSignalLine[i];
+    });
+
+    return {
+        macdLine,
+        signalLine: fullSignalLine,
+        histogram
+    };
+}
+
+// Calculate RSI
+function calculateRSI(prices, period = 14) {
+    const rsi = [];
+    let gains = [];
+    let losses = [];
+    
+    // Calculate initial price changes and gains/losses
+    for (let i = 1; i < prices.length; i++) {
+        const change = prices[i] - prices[i - 1];
+        gains.push(change > 0 ? change : 0);
+        losses.push(change < 0 ? -change : 0);
+    }
+    
+    // Calculate RSI for each point
+    for (let i = 0; i < prices.length; i++) {
+        if (i < period) {
+            rsi.push(null);
+            continue;
+        }
+        
+        // Calculate average gain and loss over the period
+        const avgGain = gains.slice(i - period, i).reduce((a, b) => a + b) / period;
+        const avgLoss = losses.slice(i - period, i).reduce((a, b) => a + b) / period;
+        
+        // Calculate RS and RSI
+        if (avgLoss === 0) {
+            rsi.push(100);
+        } else {
+            const rs = avgGain / avgLoss;
+            rsi.push(100 - (100 / (1 + rs)));
+        }
+    }
+    
+    return rsi;
+}
+
+// Toggle auto-refresh
+function toggleAutoRefresh() {
+    const button = document.getElementById('autoRefresh');
+    if (autoRefreshInterval) {
+        clearInterval(autoRefreshInterval);
+        autoRefreshInterval = null;
+        button.classList.remove('active');
+    } else {
+        updateChart(); // Immediate update
+        const interval = document.getElementById('interval').value;
+        const refreshRate = interval.includes('m') ? 30000 : 60000; // 30s for minutes, 60s for hours/days
+        autoRefreshInterval = setInterval(updateChart, refreshRate);
+        button.classList.add('active');
+    }
+}
+
+// Toggle SMA indicator
+function toggleSMA() {
+    const button = document.getElementById('smaToggle');
+    showSMA = !showSMA;
+    button.classList.toggle('active');
+    updateChart();
+}
+
+// Toggle RSI indicator
+function toggleRSI() {
+    const button = document.getElementById('rsiToggle');
+    showRSI = !showRSI;
+    button.classList.toggle('active');
+    updateChart();
+}
+
+// Toggle MACD indicator
+function toggleMACD() {
+    const button = document.getElementById('macdToggle');
+    showMACD = !showMACD;
+    button.classList.toggle('active');
+    updateChart();
+}
+
+// Initialize the chart with empty data
+function initChart() {
+    console.log('Initializing chart...');
+    const ctx = document.getElementById('priceChart').getContext('2d');
+    priceChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            datasets: [{
+                label: 'Price',
+                data: [],
+                borderColor: '#1976d2',
+                borderWidth: 1.5,
+                pointRadius: 0,
+                fill: false,
+                yAxisID: 'y',
+                order: 1
+            }, {
+                label: 'SMA (20)',
+                data: [],
+                borderColor: '#ff9800',
+                borderWidth: 1,
+                pointRadius: 0,
+                fill: false,
+                yAxisID: 'y',
+                order: 2
+            }, {
+                label: 'RSI (14)',
+                data: [],
+                borderColor: '#4caf50',
+                borderWidth: 1,
+                pointRadius: 0,
+                fill: false,
+                yAxisID: 'rsi',
+                order: 3
+            }, {
+                label: 'MACD Line',
+                data: [],
+                borderColor: '#2196f3',
+                borderWidth: 1,
+                pointRadius: 0,
+                fill: false,
+                yAxisID: 'macd',
+                order: 4
+            }, {
+                label: 'Signal Line',
+                data: [],
+                borderColor: '#f44336',
+                borderWidth: 1,
+                pointRadius: 0,
+                fill: false,
+                yAxisID: 'macd',
+                order: 5
+            }, {
+                label: 'Histogram',
+                data: [],
+                type: 'bar',
+                backgroundColor: context => {
+                    const value = context.dataset.data[context.dataIndex]?.y;
+                    return value >= 0 ? 'rgba(76, 175, 80, 0.3)' : 'rgba(244, 67, 54, 0.3)';
+                },
+                borderColor: context => {
+                    const value = context.dataset.data[context.dataIndex]?.y;
+                    return value >= 0 ? '#4caf50' : '#f44336';
+                },
+                yAxisID: 'macd',
+                order: 6
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false
+            },
+            scales: {
+                x: {
+                    type: 'time',
+                    time: {
+                        unit: 'minute',
+                        displayFormats: {
+                            minute: 'HH:mm',
+                            hour: 'HH:mm',
+                            day: 'MMM d'
+                        }
+                    },
+                    title: {
+                        display: true,
+                        text: 'Time'
+                    }
+                },
+                y: {
+                    beginAtZero: false,
+                    title: {
+                        display: true,
+                        text: 'Price (USDT)'
+                    },
+                    position: 'left'
+                },
+                rsi: {
+                    beginAtZero: true,
+                    max: 100,
+                    title: {
+                        display: true,
+                        text: 'RSI'
+                    },
+                    position: 'right',
+                    grid: {
+                        drawOnChartArea: false,
+                        color: context => {
+                            const value = context.tick.value;
+                            if (value === 70 || value === 30) return '#ff9800';
+                            if (value === 50) return '#2196f3';
+                            return '#e0e0e0';
+                        },
+                        lineWidth: context => {
+                            const value = context.tick.value;
+                            return (value === 70 || value === 30 || value === 50) ? 1 : 0.5;
+                        }
+                    }
+                },
+                macd: {
+                    display: showMACD,
+                    position: 'right',
+                    title: {
+                        display: true,
+                        text: 'MACD'
+                    },
+                    grid: {
+                        drawOnChartArea: false
+                    }
+                }
+            },
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            let label = context.dataset.label || '';
+                            if (label) {
+                                label += ': ';
+                            }
+                            if (context.dataset.yAxisID === 'rsi') {
+                                label += context.parsed.y.toFixed(2);
+                            } else if (context.dataset.yAxisID === 'macd') {
+                                label += context.parsed.y.toFixed(4);
+                            } else {
+                                label += '$' + formatPrice(context.parsed.y);
+                            }
+                            return label;
+                        },
+                        afterBody: function(tooltipItems) {
+                            const dataIndex = tooltipItems[0].dataIndex;
+                            const volume = priceChart.data.datasets[0].volume?.[dataIndex];
+                            return volume ? `Volume: ${formatNumber(volume)}` : '';
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+// Format price with appropriate decimals
+function formatPrice(price) {
+    if (price < 0.1) return price.toFixed(6);
+    if (price < 1) return price.toFixed(4);
+    if (price < 100) return price.toFixed(2);
+    return price.toFixed(1);
+}
+
+// Update price display
+function updatePriceDisplay(currentPrice, priceChange, percentChange, volume) {
+    const priceElement = document.getElementById('current-price');
+    const changeElement = document.getElementById('price-change');
+    const volumeElement = document.getElementById('volume-info');
+    const symbolElement = document.getElementById('current-symbol');
+    const favoriteButton = document.getElementById('currentFavorite');
+    
+    // Update symbol name and favorite state
+    symbolElement.textContent = `${selectedSymbol.replace('USDT', '/USDT')}`;
+    favoriteButton.classList.toggle('active', favorites.has(selectedSymbol));
+    
+    // Update price and change
+    priceElement.textContent = `$${formatPrice(currentPrice)}`;
+    
+    const changePrefix = priceChange >= 0 ? '+' : '';
+    changeElement.textContent = `${changePrefix}$${formatPrice(priceChange)} (${changePrefix}${percentChange.toFixed(2)}%)`;
+    changeElement.className = `price-change ${priceChange >= 0 ? 'positive-change' : 'negative-change'}`;
+    
+    // Update volume
+    volumeElement.textContent = `Volume: ${formatNumber(volume)} USDT`;
+}
+
+// Show/hide error message
+function showError(message) {
+    const errorElement = document.getElementById('error-message');
+    errorElement.textContent = message;
+    errorElement.style.display = message ? 'block' : 'none';
+}
+
+// Set loading state
+function setLoading(isLoading) {
+    const container = document.querySelector('.container');
+    if (isLoading) {
+        container.classList.add('loading');
+    } else {
+        container.classList.remove('loading');
+    }
+}
+
+// Fetch data from Binance API and update the chart
+async function updateChart() {
+    const interval = document.getElementById('interval').value;
+    
+    console.log(`Fetching data for ${selectedSymbol} with interval ${interval}...`);
+    showError('');
+    setLoading(true);
+    
+    try {
+        const response = await fetch(`https://api.binance.com/api/v3/klines?symbol=${selectedSymbol}&interval=${interval}&limit=100`);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        if (!data || data.length === 0) {
+            throw new Error('No data received from Binance');
+        }
+        
+        console.log('Data received:', data.length, 'candles');
+        
+        // Process the data
+        const prices = data.map(d => parseFloat(d[4]));
+        const volumes = data.map(d => parseFloat(d[5]));
+        const chartData = data.map(d => ({
+            x: new Date(d[0]),
+            y: parseFloat(d[4])
+        }));
+        
+        // Calculate indicators
+        if (showSMA) {
+            const smaData = calculateSMA(prices, 20);
+            const smaChartData = data.map((d, i) => ({
+                x: new Date(d[0]),
+                y: smaData[i]
+            }));
+            priceChart.data.datasets[1].data = smaChartData;
+        } else {
+            priceChart.data.datasets[1].data = [];
+        }
+        
+        if (showRSI) {
+            const rsiData = calculateRSI(prices, 14);
+            const rsiChartData = data.map((d, i) => ({
+                x: new Date(d[0]),
+                y: rsiData[i]
+            }));
+            priceChart.data.datasets[2].data = rsiChartData;
+        } else {
+            priceChart.data.datasets[2].data = [];
+        }
+
+        if (showMACD) {
+            const macdData = calculateMACD(prices);
+            const timePoints = data.map(d => new Date(d[0]));
+
+            // MACD Line
+            priceChart.data.datasets[3].data = timePoints.map((time, i) => ({
+                x: time,
+                y: macdData.macdLine[i]
+            }));
+
+            // Signal Line
+            priceChart.data.datasets[4].data = timePoints.map((time, i) => ({
+                x: time,
+                y: macdData.signalLine[i]
+            }));
+
+            // Histogram
+            priceChart.data.datasets[5].data = timePoints.map((time, i) => ({
+                x: time,
+                y: macdData.histogram[i]
+            }));
+        } else {
+            priceChart.data.datasets[3].data = [];
+            priceChart.data.datasets[4].data = [];
+            priceChart.data.datasets[5].data = [];
+        }
+        
+        // Calculate price change
+        const currentPrice = parseFloat(data[data.length - 1][4]);
+        const previousPrice = parseFloat(data[0][4]);
+        const priceChange = currentPrice - previousPrice;
+        const percentChange = (priceChange / previousPrice) * 100;
+        const currentVolume = volumes.reduce((a, b) => a + b, 0);
+        
+        // Store volume data for tooltips
+        priceChart.data.datasets[0].volume = volumes;
+        
+        // Update price display
+        updatePriceDisplay(currentPrice, priceChange, percentChange, currentVolume);
+        
+        // Update chart data
+        priceChart.data.datasets[0].label = `${selectedSymbol.replace('USDT', '/USDT')} Price`;
+        priceChart.data.datasets[0].data = chartData;
+        
+        // Update chart
+        priceChart.update();
+        console.log('Chart updated successfully');
+    } catch (error) {
+        console.error('Error fetching data:', error);
+        showError(`Error: ${error.message}`);
+        updatePriceDisplay(0, 0, 0, 0);
+    } finally {
+        setLoading(false);
+    }
+}
+
+async function handleExchangeChange() {
+    const exchange = document.getElementById('exchange').value;
+    currentExchange = exchange;
+    
+    // Update interval options based on exchange
+    const intervalSelect = document.getElementById('interval');
+    const currentInterval = intervalSelect.value;
+    const availableIntervals = Object.keys(EXCHANGES[exchange].intervals);
+    
+    // Clear and rebuild interval options
+    intervalSelect.innerHTML = '';
+    availableIntervals.forEach(interval => {
+        if (EXCHANGES[exchange].intervals[interval]) {
+            const option = document.createElement('option');
+            option.value = interval;
+            option.textContent = interval.toUpperCase();
+            intervalSelect.appendChild(option);
+        }
+    });
+    
+    // Set closest available interval
+    intervalSelect.value = availableIntervals.includes(currentInterval) ? 
+        currentInterval : availableIntervals[0];
+    
+    // Refresh symbol list and chart
+    await refreshSymbolList();
+    updateChart();
+}
+
+async function fetchKrakenSymbols() {
+    try {
+        const response = await fetch(`${EXCHANGES.kraken.baseUrl}${EXCHANGES.kraken.exchangeInfo}`);
+        const data = await response.json();
+        
+        if (data.error && data.error.length > 0) {
+            throw new Error(data.error[0]);
+        }
+        
+        return Object.entries(data.result)
+            .filter(([_, info]) => info.quote === 'USDT')
+            .map(([symbol, info]) => ({
+                symbol: EXCHANGES.kraken.reverseTransform(symbol),
+                volume: info.lot_decimals,
+                price: 0,
+                priceChangePercent: 0
+            }));
+    } catch (error) {
+        console.error('Error fetching Kraken symbols:', error);
+        return [];
+    }
+}
+
+async function fetchBinanceSymbols() {
+    try {
+        const response = await fetch(`${EXCHANGES.binance.baseUrl}${EXCHANGES.binance.exchangeInfo}`);
+        const data = await response.json();
+        
+        return data.symbols
+            .filter(symbol => symbol.quoteAsset === 'USDT')
+            .map(symbol => ({
+                symbol: symbol.symbol,
+                volume: 0,
+                price: 0,
+                priceChangePercent: 0
+            }));
+    } catch (error) {
+        console.error('Error fetching Binance symbols:', error);
+        return [];
+    }
+}
+
+async function fetch24hData(symbols) {
+    const exchange = EXCHANGES[currentExchange];
+    
+    try {
+        if (currentExchange === 'binance') {
+            const response = await fetch(`${exchange.baseUrl}${exchange.ticker24h}`);
+            const data = await response.json();
+            
+            return data
+                .filter(ticker => ticker.symbol.endsWith('USDT'))
+                .map(ticker => ({
+                    symbol: ticker.symbol,
+                    volume: parseFloat(ticker.volume),
+                    price: parseFloat(ticker.lastPrice),
+                    priceChangePercent: parseFloat(ticker.priceChangePercent)
+                }));
+        } else {
+            // Kraken requires separate calls for each symbol
+            const pairs = symbols.map(s => exchange.symbolTransform(s.symbol)).join(',');
+            const response = await fetch(`${exchange.baseUrl}${exchange.ticker24h}?pair=${pairs}`);
+            const data = await response.json();
+            
+            if (data.error && data.error.length > 0) {
+                throw new Error(data.error[0]);
+            }
+            
+            return Object.entries(data.result).map(([symbol, ticker]) => ({
+                symbol: exchange.reverseTransform(symbol),
+                volume: parseFloat(ticker.v[1]),
+                price: parseFloat(ticker.c[0]),
+                priceChangePercent: ((parseFloat(ticker.c[0]) - parseFloat(ticker.o)) / parseFloat(ticker.o)) * 100
+            }));
+        }
+    } catch (error) {
+        console.error(`Error fetching ${currentExchange} 24h data:`, error);
+        return [];
+    }
+}
+
+async function fetchCandlestickData(symbol, interval) {
+    const exchange = EXCHANGES[currentExchange];
+    const transformedSymbol = exchange.symbolTransform(symbol);
+    const exchangeInterval = exchange.intervals[interval];
+    
+    try {
+        if (currentExchange === 'binance') {
+            const response = await fetch(
+                `${exchange.baseUrl}${exchange.klines}?symbol=${symbol}&interval=${exchangeInterval}&limit=100`
+            );
+            const data = await response.json();
+            
+            return data.map(candle => ({
+                time: candle[0],
+                open: parseFloat(candle[1]),
+                high: parseFloat(candle[2]),
+                low: parseFloat(candle[3]),
+                close: parseFloat(candle[4]),
+                volume: parseFloat(candle[5])
+            }));
+        } else {
+            const since = Math.floor(Date.now() / 1000) - (100 * getIntervalSeconds(interval));
+            const response = await fetch(
+                `${exchange.baseUrl}${exchange.klines}?pair=${transformedSymbol}&interval=${exchangeInterval}&since=${since}`
+            );
+            const data = await response.json();
+            
+            if (data.error && data.error.length > 0) {
+                throw new Error(data.error[0]);
+            }
+            
+            return Object.values(data.result)[0].map(candle => ({
+                time: candle[0] * 1000,
+                open: parseFloat(candle[1]),
+                high: parseFloat(candle[2]),
+                low: parseFloat(candle[3]),
+                close: parseFloat(candle[4]),
+                volume: parseFloat(candle[6])
+            }));
+        }
+    } catch (error) {
+        console.error(`Error fetching ${currentExchange} candlestick data:`, error);
+        return [];
+    }
+}
+
+function getIntervalSeconds(interval) {
+    const units = {
+        'm': 60,
+        'h': 3600,
+        'd': 86400
+    };
+    const value = parseInt(interval);
+    const unit = interval.slice(-1);
+    return value * units[unit];
+}
+
+// Analyze coins for recommendations
+async function analyzeCoinsForRecommendations() {
+    const recommendations = [];
+    const interval = '1m';  // Use 1-minute candles for recent momentum
+    
+    try {
+        const volumeSortedSymbols = symbols
+            .sort((a, b) => b.volume - a.volume)
+            .slice(0, 100);
+        
+        for (const symbol of volumeSortedSymbols) {
+            const response = await fetch(`${EXCHANGES[currentExchange].baseUrl}/klines?symbol=${symbol.symbol}&interval=${interval}&limit=30`);
+            const data = await response.json();
+            
+            if (!data || data.length < 30) continue;
+            
+            const prices = data.map(d => parseFloat(d[4]));
+            const volumes = data.map(d => parseFloat(d[5]));
+            
+            const recentPriceChange = (prices[prices.length - 1] - prices[0]) / prices[0] * 100;
+            const averageVolume = volumes.reduce((a, b) => a + b) / volumes.length;
+            const recentVolume = volumes[volumes.length - 1];
+            const volumeIncrease = recentVolume / averageVolume;
+            
+            // Calculate average price movement per minute
+            const priceChanges = prices.slice(1).map((price, i) => Math.abs(price - prices[i]) / prices[i] * 100);
+            const averageVolatility = priceChanges.reduce((a, b) => a + b) / priceChanges.length;
+            
+            // Calculate momentum (rate of change)
+            const momentum = recentPriceChange / 30; // % change per minute
+            
+            // Estimate time to reach targets based on recent performance
+            const baseTimeEstimate = averageVolatility > 0 ? 1 / averageVolatility : 1;
+            const momentumFactor = momentum > 0 ? 1 / (1 + momentum) : 1;
+            const volumeFactor = volumeIncrease > 1 ? 1 / volumeIncrease : 1;
+            
+            // Calculate estimated minutes for each target
+            const getTimeEstimate = (targetPercent) => {
+                const baseTime = (targetPercent / averageVolatility) * baseTimeEstimate;
+                const adjustedTime = baseTime * momentumFactor * volumeFactor;
+                return Math.round(Math.max(5, Math.min(60, adjustedTime))); // Cap between 5 and 60 minutes
+            };
+            
+            const score = recentPriceChange * 0.4 +
+                         (volumeIncrease - 1) * 0.4 +
+                         averageVolatility * 0.2;
+            
+            if (score > 0.5 && recentPriceChange > 0 && volumeIncrease > 1.2) {
+                recommendations.push({
+                    symbol: symbol.symbol.replace('USDT', '/USDT'),
+                    currentPrice: prices[prices.length - 1],
+                    targetPrice: prices[prices.length - 1] * 1.01,
+                    score: score,
+                    timeEstimates: {
+                        halfPercent: getTimeEstimate(0.5),
+                        onePercent: getTimeEstimate(1.0),
+                        twoPercent: getTimeEstimate(2.0)
+                    }
+                });
+            }
+        }
+        
+        return recommendations
+            .sort((a, b) => b.score - a.score)
+            .slice(0, 5);
+            
+    } catch (error) {
+        console.error('Error analyzing coins:', error);
+        return [];
+    }
+}
+
+// Store recommendations in localStorage
+function storeRecommendations(recommendations) {
+    const timestamp = new Date().toISOString();
+    const historicalRecs = JSON.parse(localStorage.getItem('historicalRecommendations') || '{}');
+    
+    // Store only the last 10 recommendations
+    const timestamps = Object.keys(historicalRecs).sort().reverse();
+    if (timestamps.length >= 10) {
+        delete historicalRecs[timestamps[timestamps.length - 1]];
+    }
+    
+    historicalRecs[timestamp] = recommendations;
+    localStorage.setItem('historicalRecommendations', JSON.stringify(historicalRecs));
+    updateHistoricalDropdown();
+}
+
+// Update the historical recommendations dropdown
+function updateHistoricalDropdown() {
+    const select = document.getElementById('historicalRecommendations');
+    const historicalRecs = JSON.parse(localStorage.getItem('historicalRecommendations') || '{}');
+    
+    // Clear existing options except the default
+    while (select.options.length > 1) {
+        select.remove(1);
+    }
+    
+    // Add options for each stored recommendation
+    Object.keys(historicalRecs)
+        .sort()
+        .reverse()
+        .forEach(timestamp => {
+            const date = new Date(timestamp);
+            const option = document.createElement('option');
+            option.value = timestamp;
+            option.textContent = date.toLocaleString();
+            select.appendChild(option);
+        });
+}
+
+// Show historical recommendations
+function showHistoricalRecommendations(timestamp) {
+    if (!timestamp) return;
+    
+    const historicalRecs = JSON.parse(localStorage.getItem('historicalRecommendations') || '{}');
+    const recommendations = historicalRecs[timestamp];
+    
+    if (recommendations) {
+        document.getElementById('recommendationsModal').classList.add('active');
+        const contentContainer = document.getElementById('recommendationsContent');
+        const progressContainer = document.getElementById('recommendationsProgress');
+        
+        progressContainer.style.display = 'none';
+        contentContainer.style.display = 'block';
+        
+        updateRecommendationsModal(recommendations, new Date(timestamp));
+    }
+    
+    // Reset the select to the default option
+    document.getElementById('historicalRecommendations').value = '';
+}
+
+// Update recommendations modal content with optional timestamp
+function updateRecommendationsModal(recommendations, timestamp = null) {
+    const contentContainer = document.getElementById('recommendationsContent');
+    
+    if (!recommendations || recommendations.length === 0) {
+        contentContainer.innerHTML = `<p>No recommendations available at this time.</p>`;
+        return;
+    }
+    
+    const timeHeader = timestamp ? 
+        `<div class="recommendations-header">
+            <div class="recommendations-timestamp">Recommendations from ${timestamp.toLocaleString()}</div>
+            <button class="delete-recommendation-button" onclick="deleteHistoricalRecommendation('${timestamp.toISOString()}')">
+                Delete
+            </button>
+         </div>` : 
+        '';
+    
+    const content = `
+        ${timeHeader}
+        <table class="recommendations-table">
+            <thead>
+                <tr>
+                    <th></th>
+                    <th>Coin</th>
+                    <th>Current Price</th>
+                    <th>Target (0.5%)</th>
+                    <th>Target (1%)</th>
+                    <th>Target (2%)</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${recommendations.map(rec => {
+                    const symbol = rec.symbol.replace('/USDT', 'USDT');
+                    const isFavorite = favorites.has(symbol);
+                    return `
+                    <tr>
+                        <td>
+                            <span class="favorite-star${isFavorite ? ' active' : ''}" data-symbol="${symbol}">★</span>
+                        </td>
+                        <td>${rec.symbol}</td>
+                        <td>${rec.currentPrice.toFixed(8)}</td>
+                        <td>${(rec.currentPrice * 1.005).toFixed(8)}<br/><small>(est <b>${rec.timeEstimates.halfPercent}</b> min)</small></td>
+                        <td>${(rec.currentPrice * 1.01).toFixed(8)}<br/><small>(est <b>${rec.timeEstimates.onePercent}</b> min)</small></td>
+                        <td>${(rec.currentPrice * 1.02).toFixed(8)}<br/><small>(est <b>${rec.timeEstimates.twoPercent}</b> min)</small></td>
+                    </tr>
+                `}).join('')}
+            </tbody>
+        </table>
+        <div class="selection-criteria">
+            <h3>Selection Criteria</h3>
+            <ul>
+                <li>Price Momentum: Recent upward trend in the last 30 minutes</li>
+                <li>Volume: At least 20% above 30-minute average</li>
+                <li>Volatility: Sufficient for expected price movement</li>
+                <li>Liquidity: Among top 100 pairs by volume</li>
+            </ul>
+        </div>
+        <div class="recommendations-note">
+            <p>Note: Recommendations are based on technical analysis only. Always conduct your own research and use proper risk management. Time estimates are calculated based on recent volatility, momentum, and volume patterns for each coin.</p>
+        </div>
+    `;
+    
+    contentContainer.innerHTML = content;
+    
+    // Add click handlers for favorite stars
+    contentContainer.querySelectorAll('.favorite-star').forEach(star => {
+        star.addEventListener('click', (e) => {
+            const symbol = e.target.dataset.symbol;
+            toggleFavorite(symbol);
+            e.target.classList.toggle('active');
+        });
+    });
+}
+
+// Update the openRecommendations function
+async function openRecommendations() {
+    document.getElementById('recommendationsModal').classList.add('active');
+    const progressContainer = document.getElementById('recommendationsProgress');
+    const contentContainer = document.getElementById('recommendationsContent');
+    
+    // Show progress bar, hide content
+    progressContainer.style.display = 'block';
+    contentContainer.style.display = 'none';
+    
+    try {
+        const recommendations = await analyzeCoinsForRecommendations();
+        
+        // Store the recommendations
+        storeRecommendations(recommendations);
+        
+        // Hide progress bar, show content
+        progressContainer.style.display = 'none';
+        contentContainer.style.display = 'block';
+        
+        // Use the updateRecommendationsModal function to update content
+        updateRecommendationsModal(recommendations);
+        
+    } catch (error) {
+        progressContainer.style.display = 'none';
+        contentContainer.style.display = 'block';
+        contentContainer.innerHTML = `<p class="error">Error loading recommendations. Please try again.</p>`;
+        console.error('Error:', error);
+    }
+}
+
+function closeRecommendations() {
+    document.getElementById('recommendationsModal').classList.remove('active');
+    // Reset containers
+    document.getElementById('recommendationsProgress').style.display = 'none';
+    document.getElementById('recommendationsContent').innerHTML = '';
+}
+
+// Add styles for the recommendations table
+const style = document.createElement('style');
+style.textContent = `
+    .recommendations-controls {
+        display: flex;
+        gap: 10px;
+        margin-left: 20px;
+    }
+
+    #historicalRecommendations {
+        padding: 8px 16px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        background-color: white;
+        cursor: pointer;
+        font-size: 14px;
+        min-width: 200px;
+    }
+
+    #historicalRecommendations:hover {
+        border-color: #1976d2;
+    }
+
+    .recommendations-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 20px 0;
+    }
+    
+    .recommendations-table th,
+    .recommendations-table td {
+        padding: 12px;
+        text-align: left;
+        border-bottom: 1px solid #ddd;
+    }
+    
+    .recommendations-table th {
+        background-color: #f5f5f5;
+        font-weight: bold;
+    }
+    
+    .recommendations-table tr:hover {
+        background-color: #f8f9fa;
+    }
+    
+    .recommendations-table .favorite-star {
+        color: #ffd700;
+        cursor: pointer;
+        opacity: 0.3;
+        font-size: 20px;
+        transition: opacity 0.2s;
+    }
+    
+    .recommendations-table .favorite-star:hover {
+        opacity: 0.6;
+    }
+    
+    .recommendations-table .favorite-star.active {
+        opacity: 1;
+    }
+    
+    .error {
+        color: #d32f2f;
+        text-align: center;
+        padding: 20px;
+    }
+
+    .close-button {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        background: none;
+        border: none;
+        font-size: 24px;
+        cursor: pointer;
+        color: #666;
+        padding: 5px 10px;
+        border-radius: 4px;
+    }
+
+    .close-button:hover {
+        background-color: rgba(0, 0, 0, 0.1);
+    }
+
+    .recommendations-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 10px;
+        margin-bottom: 20px;
+        background-color: #f5f5f5;
+        border-radius: 4px;
+    }
+
+    .recommendations-timestamp {
+        color: #666;
+        font-style: italic;
+    }
+
+    .delete-recommendation-button {
+        padding: 6px 12px;
+        background-color: #dc3545;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+        transition: background-color 0.3s;
+    }
+
+    .delete-recommendation-button:hover {
+        background-color: #c82333;
+    }
+`;
+document.head.appendChild(style);
+
+// Initialize the application
+document.addEventListener('DOMContentLoaded', async () => {
+    await refreshSymbolList();
+    updateChart();
+    updateHistoricalDropdown();
+});
+
+// Add the delete function
+function deleteHistoricalRecommendation(timestamp) {
+    const historicalRecs = JSON.parse(localStorage.getItem('historicalRecommendations') || '{}');
+    
+    if (historicalRecs[timestamp]) {
+        delete historicalRecs[timestamp];
+        localStorage.setItem('historicalRecommendations', JSON.stringify(historicalRecs));
+        
+        // Update the dropdown
+        updateHistoricalDropdown();
+        
+        // Close the modal
+        closeRecommendations();
+    }
+}
