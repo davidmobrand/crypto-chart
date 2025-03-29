@@ -1,5 +1,5 @@
 // Toggle functions
-function toggleAutoRefresh() {
+export function toggleAutoRefresh() {
     const button = document.getElementById('autoRefresh');
     if (autoRefreshInterval) {
         clearInterval(autoRefreshInterval);
@@ -16,7 +16,7 @@ function toggleAutoRefresh() {
     }
 }
 
-function toggleSMA() {
+export function toggleSMA() {
     const button = document.getElementById('smaToggle');
     showSMA = !showSMA;
     button.classList.toggle('active');
@@ -24,7 +24,7 @@ function toggleSMA() {
     updateChart();
 }
 
-function toggleRSI() {
+export function toggleRSI() {
     const button = document.getElementById('rsiToggle');
     showRSI = !showRSI;
     button.classList.toggle('active');
@@ -32,13 +32,19 @@ function toggleRSI() {
     updateChart();
 }
 
-function toggleMACD() {
+export function toggleMACD() {
     const button = document.getElementById('macdToggle');
     showMACD = !showMACD;
     button.classList.toggle('active');
     priceChart.options.scales.macd.display = showMACD;
     updateChart();
 }
+
+// Make functions available globally for HTML onclick handlers
+window.toggleAutoRefresh = toggleAutoRefresh;
+window.toggleSMA = toggleSMA;
+window.toggleRSI = toggleRSI;
+window.toggleMACD = toggleMACD;
 
 let priceChart;
 let autoRefreshInterval;
