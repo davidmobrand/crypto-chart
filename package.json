@@ -31,7 +31,7 @@
     "transform": {
       "^.+\\.[t|j]sx?$": "babel-jest"
     },
-    "extensionsToTreatAsEsm": [".js", ".jsx", ".ts", ".tsx"],
+    "extensionsToTreatAsEsm": [".jsx", ".ts", ".tsx"],
     "moduleNameMapper": {
       "^(\\.{1,2}/.*)\\.js$": "$1"
     },
