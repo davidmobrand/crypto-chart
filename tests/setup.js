@@ -1,5 +1,5 @@
 import * as matchers from '@testing-library/jest-dom/matchers';
-import { expect } from '@jest/globals';
+import { expect, jest } from '@jest/globals';
 
 expect.extend(matchers);
 

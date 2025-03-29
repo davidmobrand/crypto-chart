@@ -1,3 +1,5 @@
+import { describe, test, expect, jest } from '@jest/globals';
+
 describe('Technical Indicators Calculations', () => {
     // Test SMA calculation
     test('calculateSMA should return correct values', () => {
