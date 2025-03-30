@@ -1523,6 +1523,15 @@ async function initializeWebSocket() {
     console.log(`Initializing WebSocket connection to ${wsUrl}`);
     
     try {
+        // Verify the symbol exists before proceeding
+        const symbolCheck = await safeFetch(
+            `${exchange.baseUrl}/ticker/24hr?symbol=${selectedSymbol}`
+        );
+        
+        if (!symbolCheck || symbolCheck.code) {
+            throw new Error(`Invalid symbol: ${selectedSymbol}`);
+        }
+        
         // First, fetch historical data
         const interval = document.getElementById('interval').value;
         const data = await safeFetch(
@@ -1582,26 +1591,30 @@ async function initializeWebSocket() {
         
         priceChart.update('none');
         
-        // Now initialize WebSocket connection
-        setTimeout(() => {
+        // Now initialize WebSocket connection with retry mechanism
+        let retryCount = 0;
+        const maxRetries = 3;
+        
+        const connectWebSocket = () => {
             websocket = new WebSocket(wsUrl);
             
             websocket.onopen = () => {
                 console.log('WebSocket connected successfully to:', wsUrl);
+                retryCount = 0; // Reset retry count on successful connection
                 subscribeToSymbol();
             };
             
             websocket.onclose = (event) => {
                 console.log(`WebSocket disconnected with code ${event.code}, reason: ${event.reason}`);
-                showError(`WebSocket disconnected: ${event.reason || 'Connection closed'}`);
                 
-                // Attempt to reconnect after 5 seconds
-                setTimeout(() => {
-                    if (currentApiType === 'websocket') {
-                        console.log('Attempting to reconnect WebSocket...');
-                        initializeWebSocket();
-                    }
-                }, 5000);
+                if (retryCount < maxRetries) {
+                    const delay = Math.min(1000 * Math.pow(2, retryCount), 10000);
+                    console.log(`Retrying connection in ${delay}ms (attempt ${retryCount + 1}/${maxRetries})`);
+                    retryCount++;
+                    setTimeout(connectWebSocket, delay);
+                } else {
+                    showError('WebSocket connection failed after multiple attempts. Please refresh the page.');
+                }
             };
             
             websocket.onerror = (error) => {
@@ -1612,6 +1625,12 @@ async function initializeWebSocket() {
             websocket.onmessage = (event) => {
                 try {
                     const data = JSON.parse(event.data);
+                    
+                    // Log subscription responses
+                    if (data.result !== undefined) {
+                        console.log('Subscription response:', data);
+                    }
+                    
                     handleWebSocketMessage(data);
                 } catch (error) {
                     console.error('Error parsing WebSocket message:', error);
@@ -1635,12 +1654,22 @@ async function initializeWebSocket() {
             }, 30000);
             
             websocket.pingInterval = pingInterval;
-            
-        }, 1000); // 1 second delay before establishing connection
+        };
+        
+        // Start the WebSocket connection
+        connectWebSocket();
         
     } catch (error) {
         console.error('Error initializing WebSocket:', error);
         showError('Failed to initialize WebSocket connection: ' + error.message);
+        
+        // Fallback to REST API if WebSocket fails
+        if (error.message.includes('Invalid symbol')) {
+            console.log('Invalid symbol, switching to REST API...');
+            currentApiType = 'rest';
+            document.getElementById('apiType').value = 'rest';
+            updateChart();
+        }
     }
 }
 
@@ -1658,28 +1687,50 @@ function subscribeToSymbol() {
     if (!websocket || websocket.readyState !== WebSocket.OPEN) return;
     
     const interval = document.getElementById('interval').value;
-    const symbol = currentExchange === 'binance' ? selectedSymbol : EXCHANGES[currentExchange].symbolTransform(selectedSymbol);
+    const symbol = selectedSymbol.toLowerCase();
     
     if (currentExchange === 'binance') {
-        // Unsubscribe from previous streams first
-        websocket.send(JSON.stringify({
-            method: 'UNSUBSCRIBE',
-            params: [
-                `${selectedSymbol.toLowerCase()}@kline_${interval}`,
-                `${selectedSymbol.toLowerCase()}@miniTicker`
-            ],
-            id: 1
-        }));
+        try {
+            console.log('Subscribing to WebSocket streams for:', symbol);
+            
+            // Unsubscribe from previous streams first
+            const unsubPayload = {
+                method: 'UNSUBSCRIBE',
+                params: [
+                    `${symbol}@kline_${interval}`,
+                    `${symbol}@miniTicker`
+                ],
+                id: 1
+            };
+            console.log('Unsubscribe payload:', unsubPayload);
+            websocket.send(JSON.stringify(unsubPayload));
 
-        // Subscribe to new streams
-        websocket.send(JSON.stringify({
-            method: 'SUBSCRIBE',
-            params: [
-                `${symbol.toLowerCase()}@kline_${interval}`,
-                `${symbol.toLowerCase()}@miniTicker`
-            ],
-            id: 2
-        }));
+            // Small delay before subscribing to new streams
+            setTimeout(() => {
+                const subPayload = {
+                    method: 'SUBSCRIBE',
+                    params: [
+                        `${symbol}@kline_${interval}`,
+                        `${symbol}@miniTicker`
+                    ],
+                    id: 2
+                };
+                console.log('Subscribe payload:', subPayload);
+                websocket.send(JSON.stringify(subPayload));
+            }, 500);
+            
+        } catch (error) {
+            console.error('Error in WebSocket subscription:', error);
+            showError('WebSocket subscription error: ' + error.message);
+            
+            // Attempt to reconnect
+            setTimeout(() => {
+                if (currentApiType === 'websocket') {
+                    console.log('Attempting to reconnect after subscription error...');
+                    initializeWebSocket();
+                }
+            }, 5000);
+        }
     } else {
         websocket.send(JSON.stringify({
             event: 'subscribe',
