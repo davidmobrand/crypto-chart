@@ -12,6 +12,8 @@ let symbolData = {};
 let favorites = new Set(JSON.parse(localStorage.getItem('favorites') || '[]'));
 let currentFilter = 'all';
 let currentExchange = 'binance';
+let currentApiType = 'websocket';
+let websocket = null;
 let touchStartX = null;
 let touchStartY = null;
 let pinchStartDistance = null;
@@ -80,6 +82,7 @@ const CORS_PROXY = 'https://cors-anywhere.herokuapp.com/';
 const EXCHANGES = {
     binance: {
         baseUrl: 'https://api.binance.com/api/v3',
+        wsUrl: 'wss://ws-api.binance.com:443/ws-api/v3',
         klines: '/klines',
         ticker24h: '/ticker/24hr',
         exchangeInfo: '/exchangeInfo',
@@ -97,6 +100,7 @@ const EXCHANGES = {
     },
     kraken: {
         baseUrl: 'https://api.kraken.com/0/public',
+        wsUrl: 'wss://ws.kraken.com',
         klines: '/OHLC',
         ticker24h: '/Ticker',
         exchangeInfo: '/AssetPairs',
@@ -632,12 +636,26 @@ async function updateChart() {
     setLoading(true);
     
     try {
+        // If using WebSocket, just subscribe to the new symbol/interval
+        if (currentApiType === 'websocket') {
+            if (websocket && websocket.readyState === WebSocket.OPEN) {
+                subscribeToSymbol();
+                setLoading(false);
+                return;
+            } else {
+                initializeWebSocket();
+                setLoading(false);
+                return;
+            }
+        }
+        
+        // REST API data fetching
         const data = await safeFetch(
-            `https://api.binance.com/api/v3/klines?symbol=${selectedSymbol}&interval=${interval}&limit=100`
+            `${EXCHANGES[currentExchange].baseUrl}${EXCHANGES[currentExchange].klines}?symbol=${selectedSymbol}&interval=${interval}&limit=100`
         );
         
         if (!data || data.length === 0) {
-            throw new Error('No data received from Binance');
+            throw new Error('No data received from exchange');
         }
         
         console.log('Data received:', data.length, 'candles');
@@ -766,6 +784,11 @@ async function handleExchangeChange() {
     // Set closest available interval
     intervalSelect.value = availableIntervals.includes(currentInterval) ? 
         currentInterval : availableIntervals[0];
+    
+    // If using WebSocket, reconnect with new exchange
+    if (currentApiType === 'websocket') {
+        initializeWebSocket();
+    }
     
     // Refresh symbol list and chart
     await refreshSymbolList();
@@ -1359,6 +1382,8 @@ document.head.appendChild(style);
 // Initialize the application
 document.addEventListener('DOMContentLoaded', async () => {
     await refreshSymbolList();
+    // Initialize WebSocket connection by default
+    initializeWebSocket();
     updateChart();
     updateHistoricalDropdown();
 });
@@ -1460,3 +1485,183 @@ function initCanvasEvents() {
         }
     }, { passive: true });
 }
+
+// Handle API type change
+async function handleApiTypeChange() {
+    const newApiType = document.getElementById('apiType').value;
+    
+    // If switching from WebSocket to REST
+    if (currentApiType === 'websocket' && newApiType === 'rest') {
+        closeWebSocket();
+        if (autoRefreshInterval) {
+            clearInterval(autoRefreshInterval);
+            autoRefreshInterval = null;
+            document.getElementById('autoRefresh').classList.remove('active');
+        }
+    }
+    
+    currentApiType = newApiType;
+    
+    // If switching to WebSocket
+    if (currentApiType === 'websocket') {
+        initializeWebSocket();
+    }
+    
+    // Update the chart with the new data source
+    updateChart();
+}
+
+// Initialize WebSocket connection
+function initializeWebSocket() {
+    closeWebSocket(); // Close any existing connection
+    
+    const exchange = EXCHANGES[currentExchange];
+    websocket = new WebSocket(exchange.wsUrl);
+    
+    websocket.onopen = () => {
+        console.log('WebSocket connected');
+        subscribeToSymbol();
+    };
+    
+    websocket.onclose = () => {
+        console.log('WebSocket disconnected');
+        // Attempt to reconnect after 5 seconds
+        setTimeout(() => {
+            if (currentApiType === 'websocket') {
+                initializeWebSocket();
+            }
+        }, 5000);
+    };
+    
+    websocket.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        showError('WebSocket connection error');
+    };
+    
+    websocket.onmessage = (event) => {
+        handleWebSocketMessage(JSON.parse(event.data));
+    };
+    
+    // Setup ping interval to keep connection alive
+    const pingInterval = setInterval(() => {
+        if (websocket && websocket.readyState === WebSocket.OPEN) {
+            if (currentExchange === 'binance') {
+                websocket.send(JSON.stringify({ method: 'ping' }));
+            } else {
+                websocket.send(JSON.stringify({ event: 'ping' }));
+            }
+        }
+    }, 30000); // Send ping every 30 seconds
+    
+    // Store ping interval for cleanup
+    websocket.pingInterval = pingInterval;
+}
+
+// Close WebSocket connection
+function closeWebSocket() {
+    if (websocket) {
+        clearInterval(websocket.pingInterval);
+        websocket.close();
+        websocket = null;
+    }
+}
+
+// Subscribe to symbol updates
+function subscribeToSymbol() {
+    if (!websocket || websocket.readyState !== WebSocket.OPEN) return;
+    
+    const interval = document.getElementById('interval').value;
+    const symbol = currentExchange === 'binance' ? selectedSymbol : EXCHANGES[currentExchange].symbolTransform(selectedSymbol);
+    
+    if (currentExchange === 'binance') {
+        websocket.send(JSON.stringify({
+            method: 'SUBSCRIBE',
+            params: [
+                `${symbol.toLowerCase()}@kline_${interval}`,
+                `${symbol.toLowerCase()}@ticker`
+            ],
+            id: 1
+        }));
+    } else {
+        websocket.send(JSON.stringify({
+            event: 'subscribe',
+            pair: [symbol],
+            subscription: {
+                name: 'ohlc',
+                interval: EXCHANGES[currentExchange].intervals[interval]
+            }
+        }));
+    }
+}
+
+// Handle WebSocket messages
+function handleWebSocketMessage(data) {
+    if (!data) return;
+    
+    try {
+        if (currentExchange === 'binance') {
+            if (data.e === 'kline') {
+                const candle = data.k;
+                updateChartWithWebSocketData({
+                    time: candle.t,
+                    open: parseFloat(candle.o),
+                    high: parseFloat(candle.h),
+                    low: parseFloat(candle.l),
+                    close: parseFloat(candle.c),
+                    volume: parseFloat(candle.v)
+                });
+            } else if (data.e === '24hrTicker') {
+                updatePriceDisplay(
+                    parseFloat(data.c),
+                    parseFloat(data.p),
+                    parseFloat(data.P),
+                    parseFloat(data.v)
+                );
+            }
+        } else {
+            // Handle Kraken WebSocket messages
+            if (Array.isArray(data) && data[2] === 'ohlc') {
+                const [time, open, high, low, close, , , volume] = data[1];
+                updateChartWithWebSocketData({
+                    time: time * 1000,
+                    open: parseFloat(open),
+                    high: parseFloat(high),
+                    low: parseFloat(low),
+                    close: parseFloat(close),
+                    volume: parseFloat(volume)
+                });
+            }
+        }
+    } catch (error) {
+        console.error('Error processing WebSocket message:', error);
+    }
+}
+
+// Update chart with WebSocket data
+function updateChartWithWebSocketData(candle) {
+    if (!priceChart) return;
+    
+    const datasets = priceChart.data.datasets;
+    const priceData = datasets[0].data;
+    
+    // Update or add the new candle
+    const lastIndex = priceData.findIndex(d => d.x === candle.time);
+    if (lastIndex !== -1) {
+        priceData[lastIndex] = { x: candle.time, y: candle.close };
+    } else {
+        priceData.push({ x: candle.time, y: candle.close });
+    }
+    
+    // Update volumes
+    datasets[0].volume = [...(datasets[0].volume || []).slice(-99), candle.volume];
+    
+    // Recalculate indicators if they're visible
+    if (showSMA) updateSMA();
+    if (showRSI) updateRSI();
+    if (showMACD) updateMACD();
+    
+    priceChart.update('none');
+}
+
+// Make the new function available globally
+window.handleApiTypeChange = handleApiTypeChange;
