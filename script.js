@@ -108,13 +108,23 @@ const EXCHANGES = {
             // Convert Binance style to Kraken style (e.g., BTCUSDT -> XBT/USDT)
             const base = symbol.slice(0, -4);
             const quote = symbol.slice(-4);
-            const krakenBase = base === 'BTC' ? 'XBT' : base;
+            // Special cases for Kraken symbol mapping
+            const krakenBase = {
+                'BTC': 'XBT',
+                'TRUMP': 'TRUMP',  // Keep TRUMP as is
+                'DOGE': 'XDG'
+            }[base] || base;
             return `${krakenBase}/${quote}`;
         },
         reverseTransform: (symbol) => {
             // Convert Kraken style to Binance style (e.g., XBT/USDT -> BTCUSDT)
             const [base, quote] = symbol.split('/');
-            const binanceBase = base === 'XBT' ? 'BTC' : base;
+            // Special cases for Kraken symbol mapping
+            const binanceBase = {
+                'XBT': 'BTC',
+                'TRUMP': 'TRUMP',  // Keep TRUMP as is
+                'XDG': 'DOGE'
+            }[base] || base;
             return `${binanceBase}${quote}`;
         },
         intervals: {
@@ -587,7 +597,11 @@ function setLoading(isLoading) {
 async function safeFetch(url, options = {}, retries = 3) {
     for (let i = 0; i < retries; i++) {
         try {
-            const response = await fetch(url, options);
+            // Add CORS proxy for Kraken API calls
+            const useProxy = url.includes('api.kraken.com');
+            const finalUrl = useProxy ? `${CORS_PROXY}${url}` : url;
+            
+            const response = await fetch(finalUrl, options);
             
             // Handle rate limiting
             if (response.status === 429) {
@@ -612,7 +626,14 @@ async function safeFetch(url, options = {}, retries = 3) {
                 }
             }
             
-            return await response.json();
+            const data = await response.json();
+            
+            // Handle Kraken-specific error responses
+            if (currentExchange === 'kraken' && data.error && data.error.length > 0) {
+                throw new Error(`Kraken API error: ${data.error[0]}`);
+            }
+            
+            return data;
         } catch (error) {
             console.error(`Attempt ${i + 1} failed for ${url}:`, error);
             
@@ -1525,13 +1546,25 @@ async function initializeWebSocket() {
     console.log(`Initializing WebSocket connection to ${wsUrl}`);
     
     try {
-        // Verify the symbol exists before proceeding
-        const symbolCheck = await safeFetch(
-            `${exchange.baseUrl}/ticker/24hr?symbol=${selectedSymbol}`
-        );
-        
-        if (!symbolCheck || symbolCheck.code) {
-            throw new Error(`Invalid symbol: ${selectedSymbol}`);
+        // For Kraken, verify the symbol using the Ticker endpoint
+        if (currentExchange === 'kraken') {
+            const krakenSymbol = exchange.symbolTransform(selectedSymbol);
+            const symbolCheck = await safeFetch(
+                `${exchange.baseUrl}${exchange.ticker24h}?pair=${krakenSymbol}`
+            );
+            
+            if (symbolCheck.error && symbolCheck.error.length > 0) {
+                throw new Error(`Invalid symbol: ${krakenSymbol}`);
+            }
+        } else {
+            // Binance symbol check
+            const symbolCheck = await safeFetch(
+                `${exchange.baseUrl}/ticker/24hr?symbol=${selectedSymbol}`
+            );
+            
+            if (!symbolCheck || symbolCheck.code) {
+                throw new Error(`Invalid symbol: ${selectedSymbol}`);
+            }
         }
         
         // First, fetch historical data
@@ -1609,7 +1642,9 @@ async function initializeWebSocket() {
             
             websocket.onclose = (event) => {
                 console.log(`WebSocket disconnected with code ${event.code}, reason: ${event.reason}`);
-                clearInterval(websocket.pingInterval);
+                if (websocket && websocket.pingInterval) {
+                    clearInterval(websocket.pingInterval);
+                }
                 
                 if (retryCount < maxRetries) {
                     const delay = Math.min(1000 * Math.pow(2, retryCount), 10000);
@@ -1630,10 +1665,17 @@ async function initializeWebSocket() {
                 try {
                     const data = JSON.parse(event.data);
                     
-                    // Handle pong response
-                    if (data.pong) {
-                        pongReceived = true;
-                        return;
+                    // Handle exchange-specific ping/pong
+                    if (currentExchange === 'kraken') {
+                        if (data.event === 'pong') {
+                            pongReceived = true;
+                            return;
+                        }
+                    } else {
+                        if (data.pong) {
+                            pongReceived = true;
+                            return;
+                        }
                     }
                     
                     // Log subscription responses
@@ -1660,10 +1702,12 @@ async function initializeWebSocket() {
                         }
                         
                         pongReceived = false; // Reset pong flag
-                        if (currentExchange === 'binance') {
-                            websocket.send(JSON.stringify({ id: Date.now(), method: 'LIST_SUBSCRIPTIONS' }));
-                        } else {
+                        
+                        // Send exchange-specific ping
+                        if (currentExchange === 'kraken') {
                             websocket.send(JSON.stringify({ event: 'ping' }));
+                        } else {
+                            websocket.send(JSON.stringify({ id: Date.now(), method: 'LIST_SUBSCRIPTIONS' }));
                         }
                     } catch (error) {
                         console.error('Error sending ping:', error);
@@ -1751,14 +1795,41 @@ function subscribeToSymbol() {
             }, 5000);
         }
     } else {
-        websocket.send(JSON.stringify({
-            event: 'subscribe',
-            pair: [symbol],
-            subscription: {
-                name: 'ohlc',
-                interval: EXCHANGES[currentExchange].intervals[interval]
-            }
-        }));
+        // Kraken WebSocket subscription
+        try {
+            const krakenSymbol = EXCHANGES.kraken.symbolTransform(selectedSymbol);
+            console.log('Subscribing to Kraken WebSocket for:', krakenSymbol);
+            
+            // Unsubscribe from previous subscription
+            const unsubPayload = {
+                event: 'unsubscribe',
+                pair: [krakenSymbol],
+                subscription: {
+                    name: 'ohlc',
+                    interval: EXCHANGES.kraken.intervals[interval]
+                }
+            };
+            console.log('Kraken unsubscribe payload:', unsubPayload);
+            websocket.send(JSON.stringify(unsubPayload));
+            
+            // Small delay before subscribing
+            setTimeout(() => {
+                const subPayload = {
+                    event: 'subscribe',
+                    pair: [krakenSymbol],
+                    subscription: {
+                        name: 'ohlc',
+                        interval: EXCHANGES.kraken.intervals[interval]
+                    }
+                };
+                console.log('Kraken subscribe payload:', subPayload);
+                websocket.send(JSON.stringify(subPayload));
+            }, 500);
+            
+        } catch (error) {
+            console.error('Error in Kraken WebSocket subscription:', error);
+            showError('Kraken WebSocket subscription error: ' + error.message);
+        }
     }
 }
 
@@ -1781,23 +1852,41 @@ function handleWebSocketMessage(data) {
             } else if (data.e === '24hrMiniTicker') {
                 updatePriceDisplay(
                     parseFloat(data.c),
-                    0, // Price change not available in miniTicker
-                    0, // Percent change not available in miniTicker
+                    0,
+                    0,
                     parseFloat(data.v)
                 );
             }
         } else {
             // Handle Kraken WebSocket messages
-            if (Array.isArray(data) && data[2] === 'ohlc') {
-                const [time, open, high, low, close, , , volume] = data[1];
-                updateChartWithWebSocketData({
-                    time: time * 1000,
-                    open: parseFloat(open),
-                    high: parseFloat(high),
-                    low: parseFloat(low),
-                    close: parseFloat(close),
-                    volume: parseFloat(volume)
-                });
+            if (Array.isArray(data)) {
+                // Check if it's OHLC data
+                if (data[2] === 'ohlc-1' || data[2] === 'ohlc-5' || data[2] === 'ohlc-15' || 
+                    data[2] === 'ohlc-60' || data[2] === 'ohlc-240' || data[2] === 'ohlc-1440') {
+                    const ohlcData = data[1];
+                    if (Array.isArray(ohlcData)) {
+                        const [time, open, high, low, close, , , volume] = ohlcData;
+                        updateChartWithWebSocketData({
+                            time: parseInt(time) * 1000, // Convert to milliseconds
+                            open: parseFloat(open),
+                            high: parseFloat(high),
+                            low: parseFloat(low),
+                            close: parseFloat(close),
+                            volume: parseFloat(volume)
+                        });
+                    }
+                }
+            } else if (data.event === 'heartbeat') {
+                // Handle Kraken heartbeat
+                console.log('Received Kraken heartbeat');
+            } else if (data.event === 'systemStatus') {
+                console.log('Kraken WebSocket status:', data.status);
+            } else if (data.event === 'subscriptionStatus') {
+                console.log('Kraken subscription status:', data.status, 'for', data.pair);
+                if (data.status === 'error') {
+                    console.error('Kraken subscription error:', data.errorMessage);
+                    showError('Kraken subscription error: ' + data.errorMessage);
+                }
             }
         }
     } catch (error) {
