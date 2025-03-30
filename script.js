@@ -6,7 +6,7 @@ let autoRefreshInterval;
 let showSMA = false;
 let showRSI = false;
 let showMACD = false;
-let selectedSymbol = 'BTCUSDT';
+let selectedSymbol = 'TRUMPUSDT';
 let symbols = [];
 let symbolData = {};
 let favorites = new Set(JSON.parse(localStorage.getItem('favorites') || '[]'));
