@@ -177,6 +177,19 @@ async function refreshSymbolList() {
     }, 1000);
 }
 
+// Debounce function
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
 // Initialize symbol list
 async function initSymbolList() {
     try {
@@ -211,7 +224,7 @@ async function initSymbolList() {
         
         filterSymbols();
         
-        // Setup search functionality
+        // Setup search functionality with debouncing
         const searchInput = document.getElementById('symbolSearch');
         const symbolList = document.getElementById('symbolList');
         
@@ -219,7 +232,8 @@ async function initSymbolList() {
             symbolList.classList.add('active');
         });
         
-        searchInput.addEventListener('input', () => filterSymbols());
+        const debouncedFilter = debounce(() => filterSymbols(), 300);
+        searchInput.addEventListener('input', debouncedFilter);
         
         // Close list when clicking outside
         document.addEventListener('click', (e) => {
@@ -563,20 +577,53 @@ function setLoading(isLoading) {
 }
 
 // Enhanced error handling for fetch operations
-async function safeFetch(url, options = {}) {
-    try {
-        const response = await fetch(url, options);
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+async function safeFetch(url, options = {}, retries = 3) {
+    for (let i = 0; i < retries; i++) {
+        try {
+            const response = await fetch(url, options);
+            
+            // Handle rate limiting
+            if (response.status === 429) {
+                const retryAfter = response.headers.get('Retry-After') || 5;
+                console.log(`Rate limited. Waiting ${retryAfter} seconds before retry...`);
+                await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+                continue;
+            }
+            
+            // Handle other error responses
+            if (!response.ok) {
+                if (response.status === 400) {
+                    throw new Error('Invalid request. Please check your input.');
+                } else if (response.status === 403) {
+                    throw new Error('Access denied. Please check your API permissions.');
+                } else if (response.status === 404) {
+                    throw new Error('Resource not found. The trading pair might be delisted.');
+                } else if (response.status >= 500) {
+                    throw new Error('Server error. Please try again later.');
+                } else {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+            }
+            
+            return await response.json();
+        } catch (error) {
+            console.error(`Attempt ${i + 1} failed for ${url}:`, error);
+            
+            // On last retry, throw the error
+            if (i === retries - 1) {
+                if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+                    throw new Error('Network error. Please check your internet connection.');
+                }
+                throw new Error(`Failed to fetch data: ${error.message}`);
+            }
+            
+            // Wait before retrying (exponential backoff)
+            await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
         }
-        return await response.json();
-    } catch (error) {
-        console.error(`Fetch error for ${url}:`, error);
-        throw new Error(`Failed to fetch data: ${error.message}`);
     }
 }
 
-// Update the updateChart function to use safeFetch
+// Optimize chart updates by reducing unnecessary redraws
 async function updateChart() {
     const interval = document.getElementById('interval').value;
     
@@ -603,52 +650,52 @@ async function updateChart() {
             y: parseFloat(d[4])
         }));
         
-        // Calculate indicators
+        // Batch indicator updates
+        const updates = {
+            price: {
+                data: chartData,
+                volume: volumes
+            }
+        };
+        
+        // Calculate indicators only if they're visible
         try {
             if (showSMA) {
-                const smaData = calculateSMA(prices, 20);
-                const smaChartData = data.map((d, i) => ({
-                    x: new Date(d[0]),
-                    y: smaData[i]
-                }));
-                priceChart.data.datasets[1].data = smaChartData;
-            } else {
-                priceChart.data.datasets[1].data = [];
+                updates.sma = {
+                    data: data.map((d, i) => ({
+                        x: new Date(d[0]),
+                        y: calculateSMA(prices, 20)[i]
+                    }))
+                };
             }
             
             if (showRSI) {
-                const rsiData = calculateRSI(prices, 14);
-                const rsiChartData = data.map((d, i) => ({
-                    x: new Date(d[0]),
-                    y: rsiData[i]
-                }));
-                priceChart.data.datasets[2].data = rsiChartData;
-            } else {
-                priceChart.data.datasets[2].data = [];
+                updates.rsi = {
+                    data: data.map((d, i) => ({
+                        x: new Date(d[0]),
+                        y: calculateRSI(prices, 14)[i]
+                    }))
+                };
             }
 
             if (showMACD) {
                 const macdData = calculateMACD(prices);
                 const timePoints = data.map(d => new Date(d[0]));
-
-                priceChart.data.datasets[3].data = timePoints.map((time, i) => ({
-                    x: time,
-                    y: macdData.macdLine[i]
-                }));
-
-                priceChart.data.datasets[4].data = timePoints.map((time, i) => ({
-                    x: time,
-                    y: macdData.signalLine[i]
-                }));
-
-                priceChart.data.datasets[5].data = timePoints.map((time, i) => ({
-                    x: time,
-                    y: macdData.histogram[i]
-                }));
-            } else {
-                priceChart.data.datasets[3].data = [];
-                priceChart.data.datasets[4].data = [];
-                priceChart.data.datasets[5].data = [];
+                
+                updates.macd = {
+                    line: timePoints.map((time, i) => ({
+                        x: time,
+                        y: macdData.macdLine[i]
+                    })),
+                    signal: timePoints.map((time, i) => ({
+                        x: time,
+                        y: macdData.signalLine[i]
+                    })),
+                    histogram: timePoints.map((time, i) => ({
+                        x: time,
+                        y: macdData.histogram[i]
+                    }))
+                };
             }
         } catch (error) {
             console.error('Error calculating indicators:', error);
@@ -663,18 +710,29 @@ async function updateChart() {
         const percentChange = (priceChange / previousPrice) * 100;
         const currentVolume = volumes.reduce((a, b) => a + b, 0);
         
-        // Store volume data for tooltips
-        priceChart.data.datasets[0].volume = volumes;
+        // Batch update chart data
+        priceChart.data.datasets[0].label = `${selectedSymbol.replace('USDT', '/USDT')} Price`;
+        priceChart.data.datasets[0].data = updates.price.data;
+        priceChart.data.datasets[0].volume = updates.price.volume;
+        
+        priceChart.data.datasets[1].data = updates.sma ? updates.sma.data : [];
+        priceChart.data.datasets[2].data = updates.rsi ? updates.rsi.data : [];
+        
+        if (updates.macd) {
+            priceChart.data.datasets[3].data = updates.macd.line;
+            priceChart.data.datasets[4].data = updates.macd.signal;
+            priceChart.data.datasets[5].data = updates.macd.histogram;
+        } else {
+            priceChart.data.datasets[3].data = [];
+            priceChart.data.datasets[4].data = [];
+            priceChart.data.datasets[5].data = [];
+        }
+        
+        // Single chart update
+        priceChart.update('none');
         
         // Update price display
         updatePriceDisplay(currentPrice, priceChange, percentChange, currentVolume);
-        
-        // Update chart data
-        priceChart.data.datasets[0].label = `${selectedSymbol.replace('USDT', '/USDT')} Price`;
-        priceChart.data.datasets[0].data = chartData;
-        
-        // Update chart
-        priceChart.update();
         console.log('Chart updated successfully');
     } catch (error) {
         console.error('Error fetching data:', error);
@@ -904,9 +962,9 @@ async function analyzeCoinsForRecommendations() {
                         targetPrice: prices[prices.length - 1] * 1.01,
                         score: score,
                         timeEstimates: {
-                            halfPercent: Math.max(5, Math.min(60, Math.round(15 / averageVolatility))),
-                            onePercent: Math.max(5, Math.min(60, Math.round(30 / averageVolatility))),
-                            twoPercent: Math.max(5, Math.min(60, Math.round(60 / averageVolatility)))
+                            halfPercent: Math.max(5, Math.min(30, Math.round(7.5 / averageVolatility))),
+                            onePercent: Math.max(5, Math.min(30, Math.round(15 / averageVolatility))),
+                            twoPercent: Math.max(5, Math.min(45, Math.round(30 / averageVolatility)))
                         }
                     });
                 }
