@@ -1512,7 +1512,7 @@ async function handleApiTypeChange() {
 }
 
 // Initialize WebSocket connection
-function initializeWebSocket() {
+async function initializeWebSocket() {
     closeWebSocket(); // Close any existing connection
     
     const exchange = EXCHANGES[currentExchange];
@@ -1520,7 +1520,66 @@ function initializeWebSocket() {
     console.log(`Initializing WebSocket connection to ${wsUrl}`);
     
     try {
-        // Add a small delay to ensure clean connection
+        // First, fetch historical data
+        const interval = document.getElementById('interval').value;
+        const data = await safeFetch(
+            `${exchange.baseUrl}${exchange.klines}?symbol=${selectedSymbol}&interval=${interval}&limit=100`
+        );
+        
+        if (!data || data.length === 0) {
+            throw new Error('No historical data received');
+        }
+        
+        // Process historical data
+        const prices = data.map(d => parseFloat(d[4]));
+        const volumes = data.map(d => parseFloat(d[5]));
+        const chartData = data.map(d => ({
+            x: new Date(d[0]),
+            y: parseFloat(d[4])
+        }));
+        
+        // Update chart with historical data
+        priceChart.data.datasets[0].data = chartData;
+        priceChart.data.datasets[0].volume = volumes;
+        
+        // Calculate and update indicators
+        if (showSMA) {
+            const smaData = data.map((d, i) => ({
+                x: new Date(d[0]),
+                y: calculateSMA(prices, 20)[i]
+            }));
+            priceChart.data.datasets[1].data = smaData;
+        }
+        
+        if (showRSI) {
+            const rsiData = data.map((d, i) => ({
+                x: new Date(d[0]),
+                y: calculateRSI(prices, 14)[i]
+            }));
+            priceChart.data.datasets[2].data = rsiData;
+        }
+        
+        if (showMACD) {
+            const macdData = calculateMACD(prices);
+            const timePoints = data.map(d => new Date(d[0]));
+            
+            priceChart.data.datasets[3].data = timePoints.map((time, i) => ({
+                x: time,
+                y: macdData.macdLine[i]
+            }));
+            priceChart.data.datasets[4].data = timePoints.map((time, i) => ({
+                x: time,
+                y: macdData.signalLine[i]
+            }));
+            priceChart.data.datasets[5].data = timePoints.map((time, i) => ({
+                x: time,
+                y: macdData.histogram[i]
+            }));
+        }
+        
+        priceChart.update('none');
+        
+        // Now initialize WebSocket connection
         setTimeout(() => {
             websocket = new WebSocket(wsUrl);
             
@@ -1578,7 +1637,7 @@ function initializeWebSocket() {
         
     } catch (error) {
         console.error('Error initializing WebSocket:', error);
-        showError('Failed to initialize WebSocket connection');
+        showError('Failed to initialize WebSocket connection: ' + error.message);
     }
 }
 
@@ -1681,22 +1740,62 @@ function updateChartWithWebSocketData(candle) {
     const datasets = priceChart.data.datasets;
     const priceData = datasets[0].data;
     
-    // Update or add the new candle
-    const lastIndex = priceData.findIndex(d => d.x === candle.time);
-    if (lastIndex !== -1) {
-        priceData[lastIndex] = { x: candle.time, y: candle.close };
-    } else {
-        priceData.push({ x: candle.time, y: candle.close });
+    // Keep only the last 100 data points
+    if (priceData.length >= 100) {
+        priceData.shift();
     }
     
-    // Update volumes
-    datasets[0].volume = [...(datasets[0].volume || []).slice(-99), candle.volume];
+    // Update or add the new candle
+    const lastIndex = priceData.findIndex(d => d.x.getTime() === candle.time);
+    if (lastIndex !== -1) {
+        priceData[lastIndex] = { x: new Date(candle.time), y: candle.close };
+    } else {
+        priceData.push({ x: new Date(candle.time), y: candle.close });
+    }
+    
+    // Update volumes (keep last 100)
+    const volumes = [...(datasets[0].volume || []).slice(-99), candle.volume];
+    datasets[0].volume = volumes;
+    
+    // Get all close prices for indicator calculations
+    const prices = priceData.map(d => d.y);
     
     // Recalculate indicators if they're visible
-    if (showSMA) updateSMA();
-    if (showRSI) updateRSI();
-    if (showMACD) updateMACD();
+    if (showSMA) {
+        const smaValues = calculateSMA(prices, 20);
+        datasets[1].data = priceData.map((d, i) => ({
+            x: d.x,
+            y: smaValues[i]
+        }));
+    }
     
+    if (showRSI) {
+        const rsiValues = calculateRSI(prices, 14);
+        datasets[2].data = priceData.map((d, i) => ({
+            x: d.x,
+            y: rsiValues[i]
+        }));
+    }
+    
+    if (showMACD) {
+        const macdData = calculateMACD(prices);
+        const timePoints = priceData.map(d => d.x);
+        
+        datasets[3].data = timePoints.map((time, i) => ({
+            x: time,
+            y: macdData.macdLine[i]
+        }));
+        datasets[4].data = timePoints.map((time, i) => ({
+            x: time,
+            y: macdData.signalLine[i]
+        }));
+        datasets[5].data = timePoints.map((time, i) => ({
+            x: time,
+            y: macdData.histogram[i]
+        }));
+    }
+    
+    // Update the chart
     priceChart.update('none');
 }
 
