@@ -568,9 +568,7 @@ function updatePriceDisplay(currentPrice, priceChange, percentChange, volume) {
 
 // Show/hide error message
 function showError(message) {
-    const errorElement = document.getElementById('error-message');
-    errorElement.textContent = message;
-    errorElement.style.display = message ? 'block' : 'none';
+    console.error(message);
 }
 
 // Set loading state
