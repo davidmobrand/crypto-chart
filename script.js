@@ -144,8 +144,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         updateChart();
         initCanvasEvents();
         
-        // Enable auto-refresh by default
-        toggleAutoRefresh();
+        // Enable auto-refresh by default only for REST API
+        if (currentApiType === 'rest') {
+            toggleAutoRefresh();
+        }
         
         // Setup filter buttons
         document.querySelectorAll('.filter-button').forEach(button => {
@@ -1494,11 +1496,13 @@ async function handleApiTypeChange() {
     // If switching from WebSocket to REST
     if (currentApiType === 'websocket' && newApiType === 'rest') {
         closeWebSocket();
-        if (autoRefreshInterval) {
-            clearInterval(autoRefreshInterval);
-            autoRefreshInterval = null;
-            document.getElementById('autoRefresh').classList.remove('active');
-        }
+    }
+    
+    // If switching to WebSocket, disable auto-refresh
+    if (newApiType === 'websocket' && autoRefreshInterval) {
+        clearInterval(autoRefreshInterval);
+        autoRefreshInterval = null;
+        document.getElementById('autoRefresh').classList.remove('active');
     }
     
     currentApiType = newApiType;
