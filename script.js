@@ -873,10 +873,10 @@ async function analyzeCoinsForRecommendations() {
         for (const symbol of volumeSortedSymbols) {
             try {
                 const response = await safeFetch(
-                    `${EXCHANGES[currentExchange].baseUrl}/klines?symbol=${symbol.symbol}&interval=${interval}&limit=30`
+                    `${EXCHANGES[currentExchange].baseUrl}/klines?symbol=${symbol.symbol}&interval=${interval}&limit=15`
                 );
                 
-                if (!response || response.length < 30) continue;
+                if (!response || response.length < 15) continue;
                 
                 const prices = response.map(d => parseFloat(d[4]));
                 const volumes = response.map(d => parseFloat(d[5]));
@@ -891,7 +891,7 @@ async function analyzeCoinsForRecommendations() {
                 const averageVolatility = priceChanges.reduce((a, b) => a + b) / priceChanges.length;
                 
                 // Calculate momentum (rate of change)
-                const momentum = recentPriceChange / 30; // % change per minute
+                const momentum = recentPriceChange / 15;
                 
                 const score = recentPriceChange * 0.4 +
                              (volumeIncrease - 1) * 0.4 +
@@ -1039,8 +1039,8 @@ function updateRecommendationsModal(recommendations, timestamp = null) {
         <div class="selection-criteria">
             <h3>Selection Criteria</h3>
             <ul>
-                <li>Price Momentum: Recent upward trend in the last 30 minutes</li>
-                <li>Volume: At least 20% above 30-minute average</li>
+                <li>Price Momentum: Recent upward trend in the last 15 minutes</li>
+                <li>Volume: At least 20% above 15-minute average</li>
                 <li>Volatility: Sufficient for expected price movement</li>
                 <li>Liquidity: Among top 100 pairs by volume</li>
             </ul>
