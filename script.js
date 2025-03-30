@@ -82,7 +82,7 @@ const CORS_PROXY = 'https://cors-anywhere.herokuapp.com/';
 const EXCHANGES = {
     binance: {
         baseUrl: 'https://api.binance.com/api/v3',
-        wsUrl: 'wss://ws-api.binance.com:443/ws-api/v3',
+        wsUrl: 'wss://stream.binance.com:9443/ws',
         klines: '/klines',
         ticker24h: '/ticker/24hr',
         exchangeInfo: '/exchangeInfo',
@@ -1516,45 +1516,70 @@ function initializeWebSocket() {
     closeWebSocket(); // Close any existing connection
     
     const exchange = EXCHANGES[currentExchange];
-    websocket = new WebSocket(exchange.wsUrl);
+    const wsUrl = exchange.wsUrl;
+    console.log(`Initializing WebSocket connection to ${wsUrl}`);
     
-    websocket.onopen = () => {
-        console.log('WebSocket connected');
-        subscribeToSymbol();
-    };
-    
-    websocket.onclose = () => {
-        console.log('WebSocket disconnected');
-        // Attempt to reconnect after 5 seconds
+    try {
+        // Add a small delay to ensure clean connection
         setTimeout(() => {
-            if (currentApiType === 'websocket') {
-                initializeWebSocket();
-            }
-        }, 5000);
-    };
-    
-    websocket.onerror = (error) => {
-        console.error('WebSocket error:', error);
-        showError('WebSocket connection error');
-    };
-    
-    websocket.onmessage = (event) => {
-        handleWebSocketMessage(JSON.parse(event.data));
-    };
-    
-    // Setup ping interval to keep connection alive
-    const pingInterval = setInterval(() => {
-        if (websocket && websocket.readyState === WebSocket.OPEN) {
-            if (currentExchange === 'binance') {
-                websocket.send(JSON.stringify({ method: 'ping' }));
-            } else {
-                websocket.send(JSON.stringify({ event: 'ping' }));
-            }
-        }
-    }, 30000); // Send ping every 30 seconds
-    
-    // Store ping interval for cleanup
-    websocket.pingInterval = pingInterval;
+            websocket = new WebSocket(wsUrl);
+            
+            websocket.onopen = () => {
+                console.log('WebSocket connected successfully to:', wsUrl);
+                subscribeToSymbol();
+            };
+            
+            websocket.onclose = (event) => {
+                console.log(`WebSocket disconnected with code ${event.code}, reason: ${event.reason}`);
+                showError(`WebSocket disconnected: ${event.reason || 'Connection closed'}`);
+                
+                // Attempt to reconnect after 5 seconds
+                setTimeout(() => {
+                    if (currentApiType === 'websocket') {
+                        console.log('Attempting to reconnect WebSocket...');
+                        initializeWebSocket();
+                    }
+                }, 5000);
+            };
+            
+            websocket.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                showError('WebSocket connection error. Retrying...');
+            };
+            
+            websocket.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    handleWebSocketMessage(data);
+                } catch (error) {
+                    console.error('Error parsing WebSocket message:', error);
+                    showError('Error processing WebSocket data');
+                }
+            };
+            
+            // Setup ping interval to keep connection alive
+            const pingInterval = setInterval(() => {
+                if (websocket && websocket.readyState === WebSocket.OPEN) {
+                    try {
+                        if (currentExchange === 'binance') {
+                            websocket.send(JSON.stringify({ method: 'ping' }));
+                        } else {
+                            websocket.send(JSON.stringify({ event: 'ping' }));
+                        }
+                    } catch (error) {
+                        console.error('Error sending ping:', error);
+                    }
+                }
+            }, 30000);
+            
+            websocket.pingInterval = pingInterval;
+            
+        }, 1000); // 1 second delay before establishing connection
+        
+    } catch (error) {
+        console.error('Error initializing WebSocket:', error);
+        showError('Failed to initialize WebSocket connection');
+    }
 }
 
 // Close WebSocket connection
@@ -1574,13 +1599,24 @@ function subscribeToSymbol() {
     const symbol = currentExchange === 'binance' ? selectedSymbol : EXCHANGES[currentExchange].symbolTransform(selectedSymbol);
     
     if (currentExchange === 'binance') {
+        // Unsubscribe from previous streams first
+        websocket.send(JSON.stringify({
+            method: 'UNSUBSCRIBE',
+            params: [
+                `${selectedSymbol.toLowerCase()}@kline_${interval}`,
+                `${selectedSymbol.toLowerCase()}@miniTicker`
+            ],
+            id: 1
+        }));
+
+        // Subscribe to new streams
         websocket.send(JSON.stringify({
             method: 'SUBSCRIBE',
             params: [
                 `${symbol.toLowerCase()}@kline_${interval}`,
-                `${symbol.toLowerCase()}@ticker`
+                `${symbol.toLowerCase()}@miniTicker`
             ],
-            id: 1
+            id: 2
         }));
     } else {
         websocket.send(JSON.stringify({
@@ -1610,11 +1646,11 @@ function handleWebSocketMessage(data) {
                     close: parseFloat(candle.c),
                     volume: parseFloat(candle.v)
                 });
-            } else if (data.e === '24hrTicker') {
+            } else if (data.e === '24hrMiniTicker') {
                 updatePriceDisplay(
                     parseFloat(data.c),
-                    parseFloat(data.p),
-                    parseFloat(data.P),
+                    0, // Price change not available in miniTicker
+                    0, // Percent change not available in miniTicker
                     parseFloat(data.v)
                 );
             }
@@ -1634,6 +1670,7 @@ function handleWebSocketMessage(data) {
         }
     } catch (error) {
         console.error('Error processing WebSocket message:', error);
+        showError('Error processing WebSocket data: ' + error.message);
     }
 }
 
