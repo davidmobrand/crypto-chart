@@ -129,7 +129,7 @@ const EXCHANGES = {
 };
 
 // Initialize the chart when the page loads
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     console.log('Page loaded, initializing chart...');
     try {
         // Check if running on iOS Safari
@@ -143,6 +143,9 @@ document.addEventListener('DOMContentLoaded', () => {
         initSymbolList();
         updateChart();
         initCanvasEvents();
+        
+        // Enable auto-refresh by default
+        toggleAutoRefresh();
         
         // Setup filter buttons
         document.querySelectorAll('.filter-button').forEach(button => {
