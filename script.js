@@ -1594,6 +1594,7 @@ async function initializeWebSocket() {
         // Now initialize WebSocket connection with retry mechanism
         let retryCount = 0;
         const maxRetries = 3;
+        let pongReceived = true;
         
         const connectWebSocket = () => {
             websocket = new WebSocket(wsUrl);
@@ -1606,6 +1607,7 @@ async function initializeWebSocket() {
             
             websocket.onclose = (event) => {
                 console.log(`WebSocket disconnected with code ${event.code}, reason: ${event.reason}`);
+                clearInterval(websocket.pingInterval);
                 
                 if (retryCount < maxRetries) {
                     const delay = Math.min(1000 * Math.pow(2, retryCount), 10000);
@@ -1626,6 +1628,12 @@ async function initializeWebSocket() {
                 try {
                     const data = JSON.parse(event.data);
                     
+                    // Handle pong response
+                    if (data.pong) {
+                        pongReceived = true;
+                        return;
+                    }
+                    
                     // Log subscription responses
                     if (data.result !== undefined) {
                         console.log('Subscription response:', data);
@@ -1642,16 +1650,25 @@ async function initializeWebSocket() {
             const pingInterval = setInterval(() => {
                 if (websocket && websocket.readyState === WebSocket.OPEN) {
                     try {
+                        // Check if we received a pong from the last ping
+                        if (!pongReceived) {
+                            console.warn('No pong received, reconnecting...');
+                            websocket.close();
+                            return;
+                        }
+                        
+                        pongReceived = false; // Reset pong flag
                         if (currentExchange === 'binance') {
-                            websocket.send(JSON.stringify({ method: 'ping' }));
+                            websocket.send(JSON.stringify({ id: Date.now(), method: 'LIST_SUBSCRIPTIONS' }));
                         } else {
                             websocket.send(JSON.stringify({ event: 'ping' }));
                         }
                     } catch (error) {
                         console.error('Error sending ping:', error);
+                        websocket.close();
                     }
                 }
-            }, 30000);
+            }, 30000); // Send ping every 30 seconds
             
             websocket.pingInterval = pingInterval;
         };
